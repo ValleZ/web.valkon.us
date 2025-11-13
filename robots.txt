@@ -1,3 +1,3 @@
 User-agent: *
 Allow: /
-Sitemap: https://valkon.us/pool-pulse/sitemap.xml
+Sitemap: https://valkon.us/sitemap.xml
