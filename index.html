@@ -1,16 +1,134 @@
-<html>
-<style>
-body { 
-  margin: 0;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: Verdana, Geneva, sans-serif;
-  font-size: 24px;
-}
-</style>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FireEdge - Mobile Apps by Valentin Konovalov</title>
+    <meta name="description" content="FireEdge develops mobile applications including Pool Pulse for pool chemistry management and Private AI for on-device artificial intelligence.">
+    <link rel="canonical" href="https://valkon.us/">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: Verdana, Geneva, sans-serif;
+            font-size: 16px;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #222;
+        }
+        .tagline {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 40px;
+        }
+        .apps {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .app {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .app h2 {
+            font-size: 20px;
+            margin: 0 0 8px 0;
+        }
+        .app p {
+            margin: 0 0 12px 0;
+            color: #555;
+            font-size: 14px;
+        }
+        .app a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .app a:hover {
+            text-decoration: underline;
+        }
+        .links {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .open-source {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #666;
+        }
+        .open-source a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .open-source a:hover {
+            text-decoration: underline;
+        }
+        .profile {
+            margin-top: 30px;
+            font-size: 14px;
+        }
+        .profile a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .profile a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
 <body>
-  <h1>No, I don't need a website</h1>
+<div class="container">
+    <h1>FireEdge</h1>
+    <p class="tagline">Mobile Applications</p>
+
+    <div class="apps">
+        <div class="app">
+            <h2>Pool Pulse</h2>
+            <p>Advanced pool chemistry management with predictive analysis for chlorine, pH, and water balance.</p>
+            <div class="links">
+                <a href="https://valkon.us/pool_pulse.html">Learn More</a>
+            </div>
+        </div>
+
+        <div class="app">
+            <h2>Private AI</h2>
+            <p>On-device artificial intelligence. Your data stays on your device.</p>
+            <div class="links">
+                <a href="https://play.google.com/store/apps/details?id=us.valkon.privateai">Google Play</a>
+            </div>
+        </div>
+
+        <div class="app">
+            <h2>Paper Wallet</h2>
+            <p>Bitcoin paper wallet generator. Open source.</p>
+            <div class="links">
+                <a href="https://github.com/ValleZ/Paper-Wallet">GitHub</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="profile">
+        <a href="https://www.linkedin.com/in/vkonovalov/">LinkedIn</a>
+    </div>
+</div>
 </body>
 </html>
