@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FireEdge — Apps by Valentin Konovalov</title>
-    <meta name="description" content="FireEdge builds Private AI (on-device AI for Android), Phone Call For Me (AI phone agent), Pool Pulse (pool chemistry), and Paper Wallet (Bitcoin).">
+    <meta name="description" content="FireEdge builds Private AI (on-device AI for Android), Phone Call For Me (AI phone agent), Pool Pulse (pool chemistry), and Paper Wallet (Bitcoin), plus an olfactory receptor atlas and formula simplifier for perfumery.">
     <link rel="canonical" href="https://valkon.us/">
     <style>
         * {
@@ -48,10 +48,36 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .app h2 {
+        .app h3 {
             font-size: 20px;
             margin: 0 0 8px 0;
+            font-weight: bold;
         }
+        .section {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #888;
+            font-weight: normal;
+            margin: 36px 0 14px;
+        }
+        .section:first-of-type { margin-top: 0; }
+        /* The research pages are not apps: they are read in a browser, they
+           are not on a store, and they come with their own caveats. The left
+           rule and the label keep that visible without a second page. */
+        .app.research {
+            border-left: 3px solid #879eac;
+            text-align: left;
+        }
+        .app.research .tag {
+            display: inline-block;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #879eac;
+            margin-bottom: 6px;
+        }
+        .app.research .links { justify-content: flex-start; }
         .app p {
             margin: 0 0 12px 0;
             color: #555;
@@ -99,11 +125,13 @@
 <main>
     <div class="container">
         <h1>FireEdge</h1>
-        <p class="tagline">Mobile Applications</p>
+        <p class="tagline">Apps, and a research project about smell</p>
+
+        <h2 class="section">Mobile Applications</h2>
 
         <div class="apps">
             <div class="app">
-                <h2>Private AI</h2>
+                <h3>Private AI</h3>
                 <p>On-device artificial intelligence. Your data stays on your device.</p>
                 <div class="links">
                     <a href="https://play.google.com/store/apps/details?id=us.valkon.privateai">Google Play</a>
@@ -111,7 +139,7 @@
             </div>
 
             <div class="app">
-                <h2>Phone Call For Me</h2>
+                <h3>Phone Call For Me</h3>
                 <p>AI agent that makes phone calls on your behalf — navigates IVR menus, books appointments, and handles hold queues.</p>
                 <div class="links">
                     <a href="https://phonecallfor.me">phonecallfor.me</a>
@@ -119,7 +147,7 @@
             </div>
 
             <div class="app">
-                <h2>Pool Pulse</h2>
+                <h3>Pool Pulse</h3>
                 <p>Advanced pool chemistry management with predictive analysis for chlorine, pH, and water balance.</p>
                 <div class="links">
                     <a href="https://valkon.us/pool_pulse.html">Pool Pulse Details</a>
@@ -127,10 +155,41 @@
             </div>
 
             <div class="app">
-                <h2>Paper Wallet</h2>
+                <h3>Paper Wallet</h3>
                 <p>Bitcoin paper wallet generator. Open source.</p>
                 <div class="links">
                     <a href="https://github.com/ValleZ/Paper-Wallet">GitHub</a>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section">Research</h2>
+
+        <div class="apps">
+            <div class="app research">
+                <span class="tag">Olfaction</span>
+                <h3>Receptor atlas</h3>
+                <p>Every raw material in a perfumer's library, placed by the
+                    response it is predicted to provoke across all 386
+                    functional human olfactory receptors. 361 points: single
+                    molecules, essential oils rebuilt from their published GC
+                    compositions, and the average of everything. Runs in the
+                    browser.</p>
+                <div class="links">
+                    <a href="https://valkon.us/molor">Open the atlas</a>
+                </div>
+            </div>
+
+            <div class="app research">
+                <span class="tag">Olfaction</span>
+                <h3>Formula simplifier</h3>
+                <p>Paste a perfume formula and find the smallest blend of
+                    materials with the same predicted character — with the
+                    closeness measured against what a random blend of that
+                    size would manage, and an honest list of what the model
+                    cannot see.</p>
+                <div class="links">
+                    <a href="https://valkon.us/molor/simplify">Open the simplifier</a>
                 </div>
             </div>
         </div>

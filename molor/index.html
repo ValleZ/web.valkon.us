@@ -535,7 +535,9 @@ window.addEventListener("error", function (ev) {
   function radius(i) {
     var base = state.sizeByPotency ? 4.2 + 7.5 * Math.min(1, M().total[i] / 22) : 6;
     if (D.molecules[i].isQuery) base *= 1.7;
-    if (D.molecules[i].isWhite) base *= 1.5;
+    // Smaller than a material, not larger: it is a reference mark and was
+    // reading as the most important thing on the page.
+    if (D.molecules[i].isWhite) base *= 0.85;
     return base * depthScale(i);
   }
 
@@ -594,15 +596,15 @@ window.addEventListener("error", function (ev) {
         // something you could put in a bottle -- which it is not.
         ctx.arc(sx(idx), sy(idx), r, 0, 6.2832);
         ctx.fillStyle = surface;
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = 0.5;
         ctx.fill();
         ctx.globalAlpha = 1;
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = fg;
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = muted;
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(sx(idx), sy(idx), Math.max(1.5, r * 0.22), 0, 6.2832);
-        ctx.fillStyle = fg;
+        ctx.arc(sx(idx), sy(idx), Math.max(1, r * 0.16), 0, 6.2832);
+        ctx.fillStyle = muted;
         ctx.fill();
         continue;
       }
@@ -692,15 +694,18 @@ window.addEventListener("error", function (ev) {
     for (var qi = 0; qi < order.length; qi++) {
       var qid = order[qi];
       if (!D.molecules[qid].isQuery && !D.molecules[qid].isWhite) continue;
-      ctx.font = '700 12px "Archivo", system-ui, sans-serif';
+      var isW = !!D.molecules[qid].isWhite;
+      ctx.font = (isW ? '500 10px' : '700 12px')
+        + ' "Archivo", system-ui, sans-serif';
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       var qnm = D.molecules[qid].name;
       var qw = ctx.measureText(qnm).width;
       var qcx = sx(qid), qcy = sy(qid) - radius(qid) - 4;
-      ctx.fillStyle = surface; ctx.globalAlpha = 0.85;
-      ctx.fillRect(qcx - qw / 2 - 3, qcy - 13, qw + 6, 15);
+      ctx.fillStyle = surface; ctx.globalAlpha = isW ? 0.7 : 0.85;
+      ctx.fillRect(qcx - qw / 2 - 3, qcy - (isW ? 11 : 13),
+                   qw + 6, isW ? 13 : 15);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = D.molecules[qid].isWhite ? fg : accent;
+      ctx.fillStyle = isW ? muted : accent;
       ctx.fillText(qnm, qcx, qcy);
     }
 
@@ -1014,8 +1019,8 @@ window.addEventListener("error", function (ev) {
         + 'color:#fff">BLEND</span> ';
     }
     if (m.isWhite) {
-      chips += '<span class="chip" style="background:var(--fg);'
-        + 'color:var(--bg)">REFERENCE POINT</span> ';
+      chips += '<span class="chip" style="background:var(--surface-2);'
+        + 'color:var(--muted)">reference point</span> ';
     }
     if (m.isNatural) {
       chips += '<span class="chip" style="background:var(--accent);'
@@ -1270,7 +1275,11 @@ window.addEventListener("error", function (ev) {
       + "same point, so stereochemistry is effectively invisible; and the vectors encode "
       + "chemical structure more strongly than smell.";
     document.getElementById("foot").innerHTML =
-      "<strong>Layout</strong>: MolOR " + esc(encoder) + ", cross-attention over "
+      "<strong><a href=\"https://valkon.us/molor/simplify\" "
+      + "style=\"color:var(--accent)\">Formula simplifier &#8594;</a></strong>"
+      + " &nbsp;paste a formula and find the smallest blend with the same "
+      + "predicted character."
+      + "<br><br><strong>Layout</strong>: MolOR " + esc(encoder) + ", cross-attention over "
       + "ESM-2 650M receptor embeddings, checkpoint "
       + esc(D.meta.checkpoint_md5.slice(0, 12))
       + ", receptor panel " + esc(D.meta.panel_hash)
