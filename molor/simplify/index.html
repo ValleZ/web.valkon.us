@@ -407,7 +407,14 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
             // "Aldehyde C-16" is a prefix of cedarwood, clary, clove and
             // cinnamon, and that aldehyde was being reported as matching
             // four oils equally well and dropped.
+            //
+            // And no more than two characters apart. A prefix match is for
+            // inflections -- mandarin/mandarine, petitgrain/petitgrains --
+            // and without the bound "pepper" matched "peppermint", so black
+            // pepper oil silently became peppermint. A dropped ingredient is
+            // printed as dropped; a swapped one is invisible.
             if (want[w].length < 3 || head.length < 3) continue;
+            if (Math.abs(want[w].length - head.length) > 2) continue;
             ok = want[w].indexOf(head) === 0 || head.indexOf(want[w]) === 0;
           }
         }
@@ -480,6 +487,11 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     // bare "Galaxolide 50" trade name is left alone.
     low = low.replace(DILUENT, "");
     low = low.replace(/\b\d+(?:\.\d+)?\s*%\s*(?:in\s+)?(?:dpg|pg|ipm|tec|alcohol)?\b/, "");
+    // A trailing percentage with no diluent named: "Calone 1%",
+    // "2-Acetylpyrazine 1%". The rule above wants a solvent token after the
+    // sign, and plenty of sheets do not write one. Anchored to the end, so
+    // "Galaxolide 50" stays a trade name.
+    low = low.replace(/[\s,]+\d+(?:\.\d+)?\s*%\s*$/, "");
     low = low.replace(GRADE, " ");
     // A bare grade number: "Citronellol 98", "Ambrinol 95".
     low = low.replace(/\s+\d{2,3}\s*$/, "");
