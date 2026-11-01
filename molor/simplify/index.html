@@ -740,22 +740,26 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
   function divbars(container, items) {
     // items: [label, value]; a positive value is something the formula has
     // and the simplification lacks, a negative one something it gained.
+    //
+    // A shortfall goes left and a surplus right, because that is the
+    // direction a reader already expects: left of centre is "less than the
+    // original", and the shortfall is also the side that is a problem, so it
+    // carries the warning colour while the surplus stays neutral. The first
+    // version had these the other way round and was simply hard to read.
     var m = Math.max.apply(null, items.map(function (x) {
       return Math.abs(x[1]);
     })) || 1;
     var html = '<div class="divkey"><span></span>'
-      + '<span class="l">the simplification adds</span>'
-      + "<span>the formula has, this lacks</span><span></span></div>";
+      + '<span class="l">the formula has, this lacks</span>'
+      + "<span>the simplification adds</span><span></span></div>";
     html += items.map(function (x) {
       var pctw = Math.min(100, 100 * Math.abs(x[1]) / m);
-      var neg = x[1] < 0;
+      var lacks = x[1] > 0;
+      var seg = '<span class="seg" style="width:' + pctw.toFixed(1)
+        + '%;background:var(' + (lacks ? "--warn" : "--chart") + ')"></span>';
       return '<div class="divrow"><span class="lbl">' + esc(x[0])
-        + '</span><span class="half l">'
-        + (neg ? '<span class="seg" style="width:' + pctw.toFixed(1)
-            + '%;background:var(--warn)"></span>' : "")
-        + '</span><span class="half r">'
-        + (neg ? "" : '<span class="seg" style="width:' + pctw.toFixed(1)
-            + '%;background:var(--chart)"></span>')
+        + '</span><span class="half l">' + (lacks ? seg : "")
+        + '</span><span class="half r">' + (lacks ? "" : seg)
         + '</span><span class="val">' + Math.abs(x[1]).toFixed(3)
         + "</span></div>";
     }).join("");
@@ -1016,7 +1020,14 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
         html += "<tr><td>" + esc(m.n) + "</td><td class=num>"
           + (x.dil === 100 ? "neat" : x.dil + "%") + "</td><td class=num>"
           + (x.parts >= 1 ? x.parts.toFixed(1) : x.parts.toPrecision(2))
-          + "</td><td class=num>" + pct(x.share) + "</td>"
+          + '</td><td class="num'
+          // Dim the cell only when it really is the same number as the one
+          // beside it. "Taken neat" is not the same test: in a formula that
+          // dilutes anything, the parts are rescaled to sum to 100, so a neat
+          // row reads 48.4 parts against 49.11% neat -- close, different, and
+          // dimming it would hide a real discrepancy.
+          + (Math.abs(x.parts - 100 * x.share) < 0.05 ? " dim" : "") + '">'
+          + pct(x.share) + "</td>"
           + (useOav ? "<td class=num>" + pct(x.act) + "%</td>" : "")
           + "<td>" + note.join(" ") + "</td></tr>";
       });
