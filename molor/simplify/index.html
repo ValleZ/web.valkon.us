@@ -27,6 +27,7 @@
     --bg: #f4f6f8; --surface: #ffffff; --surface-2: #f3f5f7;
     --fg: #121212; --muted: #5f6368; --line: #e3e6e9;
     --accent: #121212; --chart: #879eac; --warn: #9a5b33; --good: #3f6b52;
+    --lack: #b5402f; --add: #3f7d5c; --faint: #a4a9ad;
     --font-display: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --font-body: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -36,12 +37,14 @@
       --bg: #0f0f10; --surface: #1a1b1c; --surface-2: #232426;
       --fg: #ededed; --muted: #9aa0a6; --line: #2e2e2e;
       --accent: #ededed; --chart: #879eac; --warn: #c08b63; --good: #7fa891;
+      --lack: #e08872; --add: #76b393; --faint: #64686c;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0f0f10; --surface: #1a1b1c; --surface-2: #232426;
     --fg: #ededed; --muted: #9aa0a6; --line: #2e2e2e;
     --accent: #ededed; --chart: #879eac; --warn: #c08b63; --good: #7fa891;
+    --lack: #e08872; --add: #76b393; --faint: #64686c;
   }
   [hidden] { display: none !important; }
   * { box-sizing: border-box; }
@@ -95,6 +98,7 @@
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
   .mono { font-family: var(--font-mono); }
   .dim { color: var(--muted); }
+  .faint { color: var(--faint); }
   .warn { color: var(--warn); }
   .good { color: var(--good); }
   .pill {
@@ -750,13 +754,15 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
       return Math.abs(x[1]);
     })) || 1;
     var html = '<div class="divkey"><span></span>'
-      + '<span class="l">the formula has, this lacks</span>'
-      + "<span>the simplification adds</span><span></span></div>";
+      + '<span class="l" style="color:var(--lack)">'
+      + 'the formula has, this lacks</span>'
+      + '<span style="color:var(--add)">the simplification adds</span>'
+      + "<span></span></div>";
     html += items.map(function (x) {
       var pctw = Math.min(100, 100 * Math.abs(x[1]) / m);
       var lacks = x[1] > 0;
       var seg = '<span class="seg" style="width:' + pctw.toFixed(1)
-        + '%;background:var(' + (lacks ? "--warn" : "--chart") + ')"></span>';
+        + '%;background:var(' + (lacks ? "--lack" : "--add") + ')"></span>';
       return '<div class="divrow"><span class="lbl">' + esc(x[0])
         + '</span><span class="half l">' + (lacks ? seg : "")
         + '</span><span class="half r">' + (lacks ? "" : seg)
@@ -1026,7 +1032,8 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
           // dilutes anything, the parts are rescaled to sum to 100, so a neat
           // row reads 48.4 parts against 49.11% neat -- close, different, and
           // dimming it would hide a real discrepancy.
-          + (Math.abs(x.parts - 100 * x.share) < 0.05 ? " dim" : "") + '">'
+          + (Math.abs(x.parts - 100 * x.share) < 0.05 ? " faint" : "")
+          + '">'
           + pct(x.share) + "</td>"
           + (useOav ? "<td class=num>" + pct(x.act) + "%</td>" : "")
           + "<td>" + note.join(" ") + "</td></tr>";
