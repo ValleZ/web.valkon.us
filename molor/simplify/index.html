@@ -219,6 +219,7 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
         <h2>What it loses</h2>
         <div class="card">
           <div id="residual"></div>
+          <p class="note" id="residScale"></p>
           <p class="note">Descriptor by descriptor, how the simplification
             differs from the formula. Everything here is well under the
             difference between two materials you would struggle to tell
@@ -800,7 +801,7 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     }).join("");
   }
 
-  function divbars(container, items) {
+  function divbars(container, items, scale) {
     // items: [label, value]; a positive value is something the formula has
     // and the simplification lacks, a negative one something it gained.
     //
@@ -809,7 +810,12 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     // original", and the shortfall is also the side that is a problem, so it
     // carries the warning colour while the surplus stays neutral. The first
     // version had these the other way round and was simply hard to read.
-    var m = Math.max.apply(null, items.map(function (x) {
+    // The scale is fixed by the caller, not taken from the rows on screen.
+    // Normalising to the largest bar present made every k look equally wrong:
+    // a one-material match and a ten-material match both filled the width,
+    // and only the numbers beside them said otherwise. With a fixed scale the
+    // bars shrink as materials are added, which is the thing being judged.
+    var m = scale || Math.max.apply(null, items.map(function (x) {
       return Math.abs(x[1]);
     })) || 1;
     var html = '<div class="divkey"><span></span>'
@@ -819,6 +825,8 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
       + "<span></span></div>";
     html += items.map(function (x) {
       var pctw = Math.min(100, 100 * Math.abs(x[1]) / m);
+      // Below about a pixel a bar reads as absent rather than as small.
+      if (Math.abs(x[1]) > 0) pctw = Math.max(pctw, 0.6);
       var lacks = x[1] > 0;
       var seg = '<span class="seg" style="width:' + pctw.toFixed(1)
         + '%;background:var(' + (lacks ? "--lack" : "--add") + ')"></span>';
@@ -1008,6 +1016,20 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
                    baseBest: base[0] });
     }
     STATE.curve = curve;
+    // One ruler for the whole slider: the largest single-descriptor shortfall
+    // or surplus any k produces for this formula. k=1 then fills the width and
+    // every larger k is measured against it.
+    var rmax = 0;
+    for (var rk in STATE.cache) {
+      if (!Object.prototype.hasOwnProperty.call(STATE.cache, rk)) continue;
+      var rs = STATE.cache[rk];
+      var rg = blend(rs.idxs, rs.w);
+      for (var rj = 0; rj < ND; rj++) {
+        var rv = Math.abs(target[rj] - rg[rj]);
+        if (rv > rmax) rmax = rv;
+      }
+    }
+    STATE.residMax = rmax || 1;
     // The floor: what the largest allowed blend achieves. Anything within a
     // quarter of that is as close as adding materials is going to get, which
     // is the only "good enough" this page can honestly assert.
@@ -1145,7 +1167,14 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     var diff = [];
     for (var j = 0; j < ND; j++) diff.push([DESC[j], STATE.target[j] - got[j]]);
     diff.sort(function (a, b) { return Math.abs(b[1]) - Math.abs(a[1]); });
-    divbars(el("residual"), diff.slice(0, 8));
+    divbars(el("residual"), diff.slice(0, 8), STATE.residMax);
+    // Say what full width means, so a short bar is a quantity and not just a
+    // short bar, and so two runs can be compared.
+    var worst = diff.length ? Math.abs(diff[0][1]) : 0;
+    el("residScale").textContent =
+      "Full width is " + STATE.residMax.toFixed(3)
+      + ", the largest gap this formula shows at any number of materials. "
+      + "The widest bar here is " + worst.toFixed(3) + ".";
 
     // caveats, the specific ones first
     var cav = [];
