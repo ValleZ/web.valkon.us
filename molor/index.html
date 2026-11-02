@@ -95,7 +95,12 @@ h1 {
   margin: 0 0 4px;
   text-wrap: balance;
 }
-.sub { color: var(--muted); margin: 0 0 16px; max-width: 70ch; }
+/* The description lines up with the right edge of the plot, not with a
+   reading measure. At 70ch it was about half the plot's width on a wide
+   monitor, which read as a mistake rather than as typography. 364px is
+   the inspector column plus the grid gap. */
+.sub { color: var(--muted); margin: 0 0 16px; max-width: calc(100% - 364px); }
+@media (max-width: 980px) { .sub { max-width: none; } }
 .sub code { font-family: var(--font-mono); font-size: 0.88em; }
 
 .bar {
@@ -1304,49 +1309,46 @@ window.addEventListener("error", function (ev) {
     var nAxes = ((D.models[state.model] || {}).axes || []).length;
     document.getElementById("sub").innerHTML =
       (isPercept
-        ? D.meta.n_molecules + " perfumery materials arranged by <strong>how "
-          + "they are predicted to smell</strong>: neighbours here share "
-          + "odour words, and the " + nAxes + " axes are descriptors like "
-          + "<em>rose</em>, <em>waxy</em> and <em>black currant</em> rather "
-          + "than anything chemical. The position is a prediction, from a "
-          + "model fitted to 4983 molecules that people described by hand "
-          + "— not a measurement of smell. Use the <strong>Space</strong> "
-          + "selector for the two chemistry maps, where materials are placed "
-          + "by which olfactory receptors they trigger instead; those answer "
-          + "a different question and disagree with this one. "
-        : D.meta.n_molecules + " perfumery materials scored against " + D.meta.n_receptors
-          + " functional human olfactory receptors by <strong>MolOR</strong> "
-          + "(" + esc(encoder) + ", ESM-2 650M protein embeddings). <strong>Position is "
-          + "receptor response, not smell</strong> — ")
+        ? D.meta.n_molecules + " materials placed by <strong>how they are "
+          + "predicted to smell</strong> — neighbours share odour words. "
+          + "A prediction, not a measurement."
+        : D.meta.n_molecules + " materials placed by which of "
+          + D.meta.n_receptors + " human olfactory receptors they trigger. "
+          + "<strong>Position is chemistry, not smell.</strong>")
+      + " Drag to rotate, scroll to zoom, click a point to inspect it."
+      + ' <a href="#how" style="color:var(--accent)">How to read it →</a>';
+    document.getElementById("foot").innerHTML =
+      '<span id="how"></span><strong>Reading the map</strong>: '
+      + (isPercept
+        ? "the axes are odour descriptors like <em>rose</em>, <em>waxy</em> "
+          + "and <em>black currant</em>, from a model fitted to 4983 "
+          + "molecules that people described by hand. The two "
+          + "<em>Chemistry</em> spaces place the same materials by receptor "
+          + "response instead; they answer a different question and disagree "
+          + "with this one. "
+        : "the layout is receptor response, ")
       + colourNote
-      + "Drag to rotate, shift-drag to pan, "
-      + "scroll to zoom; on a touch screen drag to rotate, pinch to zoom and "
-      + "double-tap to re-fit. Click or tap a material to inspect it; "
-      + "shift-click a second to compare. "
-      + "<br><br>"
       + "Grey links join pairs that are mutual nearest neighbours in the real "
       + (isPercept ? nAxes + "-dimensional" : "386-dimensional")
       + " space, so <strong>trust the links over bare proximity</strong> — "
-      + "a dotted outline marks a material whose plotted neighbours are mostly not its true "
-      + "ones. This projection reproduces the real distances at Shepard "
-      + p.shepard.toFixed(3) + ". "
+      + "a dotted outline marks a material whose plotted neighbours are mostly "
+      + "not its true ones. This projection reproduces the real distances at "
+      + "Shepard " + p.shepard.toFixed(3) + ". "
       + (isPercept
-        ? "That is lower than the encoder maps manage, for a reason: in "
+        ? "That is lower than the chemistry maps manage, for a reason: in "
           + "receptor space one component dominates so flattening costs "
           + "little, while here the first three take only a third of the "
-          + "variance and there is more to lose on the way down. Two limits. "
-          + "Geraniol and nerol, geranyl and neryl acetate, menthone and "
-          + "isomenthone sit on <strong>exactly</strong> the same point, "
-          + "because neither the fingerprint behind this model nor its "
-          + "descriptors can see geometry — a stronger version of the "
-          + "stereo blindness the encoder maps have. And a homologous "
-          + "series reaches it only through molecular weight, so "
-          + "neighbouring aldehydes crowd together."
-        : "Two limits: enantiomers and E/Z isomers land on the "
-          + "same point, so stereochemistry is effectively invisible; and the vectors encode "
-          + "chemical structure more strongly than smell.");
-    document.getElementById("foot").innerHTML =
-      "<strong><a href=\"https://valkon.us/molor/simplify\" "
+          + "variance. Two limits. Geraniol and nerol, geranyl and neryl "
+          + "acetate, menthone and isomenthone sit on <strong>exactly</strong> "
+          + "the same point, because neither the fingerprint behind this model "
+          + "nor its descriptors can see geometry. And a homologous series "
+          + "reaches it only through molecular weight, so neighbouring "
+          + "aldehydes crowd together."
+        : "Two limits: enantiomers and E/Z isomers land on the same point, so "
+          + "stereochemistry is effectively invisible; and the vectors encode "
+          + "chemical structure more strongly than smell.")
+      + "<br><br>"
+      + "<strong><a href=\"https://valkon.us/molor/simplify\" "
       + "style=\"color:var(--accent)\">Formula simplifier &#8594;</a></strong>"
       + " &nbsp;paste a formula and find the smallest blend with the same "
       + "predicted character."
