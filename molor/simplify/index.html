@@ -570,6 +570,38 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     }
     return v;
   }
+  // A link that puts this exact blend on the atlas. What travels is the
+  // material names and the MIXING WEIGHTS, not masses -- this page owns the
+  // dosing semantics (odour activity where every ingredient has a threshold,
+  // mass fractions otherwise) and the atlas should not have to reimplement
+  // them and drift. It mixes with the same sum of w_i * p_i that blend() does
+  // here, so the point it shows is this page's own target vector.
+  //
+  // Only the smell map can take it. A blend's receptor vector needs a union
+  // rule, and the atlas's own notes record that noisy-OR put a 28-ingredient
+  // formula 62 units from the centre of a cloud whose materials sit at 14.6 --
+  // it measures ingredient count as much as smell. The link names the space so
+  // the atlas can refuse politely on the other two.
+  var ATLAS = "https://valkon.us/molor/";
+  function atlasLink(idxs, w, label) {
+    var parts = [], tot = 0, i;
+    for (i = 0; i < idxs.length; i++) tot += w[i];
+    if (!(tot > 0)) return null;
+    for (i = 0; i < idxs.length; i++) {
+      var f = w[i] / tot;
+      if (f < 1e-4) continue;
+      parts.push(encodeURIComponent(MAT[idxs[i]].n) + ":" + f.toFixed(5));
+    }
+    if (!parts.length) return null;
+    return ATLAS + "#space=percept&label=" + encodeURIComponent(label)
+      + "&blend=" + parts.join(",");
+  }
+  function atlasAnchor(idxs, w, label, text) {
+    var u = atlasLink(idxs, w, label);
+    if (!u) return "";
+    return '<a href="' + u + '" target="_blank" rel="noopener" '
+      + 'style="color:var(--accent)">' + text + ' →</a>';
+  }
   function centredCos(a, b) {
     var na = 0, nb = 0, s = 0;
     for (var j = 0; j < ND; j++) {
@@ -916,7 +948,11 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
           + x.amount + "</td><td class=num>"
           + pct(x.neat / totalNeat) + "</td><td>" + tag + "</td></tr>";
       });
-    el("resolved").innerHTML = html;
+    el("resolved").innerHTML = html
+      + '<p class="note">'
+      + atlasAnchor(idxs, w, "formula as entered",
+                    "Show this formula on the atlas")
+      + "</p>";
     // Coverage is of the odorous weight, not of everything in the bottle. A
     // formula for skin is mostly carrier -- one was 88% MCT oil -- and
     // reporting that as 11% coverage made a fully resolved formula look
@@ -1207,7 +1243,11 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
     html += '<tr><td class="dim">total</td><td></td><td class="num dim">'
       + sumParts.toFixed(1) + '</td><td class="num dim">100.00</td>'
       + (useOav ? '<td class="num dim">100%</td>' : "") + "<td></td></tr>";
-    el("proposal").innerHTML = html;
+    el("proposal").innerHTML = html
+      + '<p class="note">'
+      + atlasAnchor(s.idxs, s.w, k + "-material proposal",
+                    "Show this proposal on the atlas")
+      + "</p>";
     el("cols").textContent = anyDil
       ? "Weigh the parts column at the stock strength beside it. It differs "
         + "from the neat column because a 10% stock needs ten times the "
