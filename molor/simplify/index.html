@@ -1307,12 +1307,19 @@ A stock strength in the name is read as a dilution: Calone 10%  40"></textarea>
         // spread travels with it so a median of 882 values spanning six
         // orders of magnitude cannot read as a measurement.
         if (useOav && m.thrSrc === "kfo") {
-          note.push('<span class="' + (m.thrWide ? "warn" : "dim") + '">'
-            + "threshold from KFO-Atlas, median of " + m.thrN
-            + (m.thrN === 1 ? " value" : " published values")
-            + (m.thrWide ? " spanning " + fmtThr(m.thrLo) + "–"
-                 + fmtThr(m.thrHi) + " ppb" : "")
-            + "</span>");
+          var n = m.thrN || 0, words;
+          if (n <= 1) {
+            words = "threshold from KFO-Atlas, a single published value";
+          } else {
+            words = "threshold from KFO-Atlas, median of " + n
+              + " published values"
+              + (m.thrWide
+                  ? ", spanning " + fmtThr(m.thrLo) + "–"
+                    + fmtThr(m.thrHi) + " ppb"
+                  : (m.thrHi > m.thrLo ? "" : ", all in agreement"));
+          }
+          note.push('<span class="' + (m.thrWide || n <= 1 ? "warn" : "dim")
+            + '">' + words + "</span>");
         }
         if (!STATE.inFormula[x.idx] && m.unver) {
           note.push('<span class="warn">a constituent structure, not a '

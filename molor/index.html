@@ -1171,6 +1171,19 @@ window.addEventListener("error", function (ev) {
     draw();
   }, { passive: false });
 
+  // "median of 1 published values spanning 220-220" was the first version of
+  // this. A single value has no median and no span, and 14 of the 125 KFO
+  // entries rest on one paper while another 31 have every paper agreeing. The
+  // phrasing has to say which of the three it is, because the whole point of
+  // carrying the count is to stop a thin figure reading like a strong one.
+  function kfoWords(m) {
+    var n = m.thrN || 0;
+    if (n <= 1) return "KFO-Atlas, a single published value";
+    var span = (m.thrLo && m.thrHi && m.thrHi > m.thrLo)
+      ? ", spanning " + fmtPpb(m.thrLo) + "–" + fmtPpb(m.thrHi)
+      : ", all in agreement";
+    return "KFO-Atlas, median of " + n + " published values" + span;
+  }
   function fmtPpb(v) {
     if (!(v > 0)) return "0";
     if (v >= 100) return Math.round(v).toString();
@@ -1482,12 +1495,8 @@ window.addEventListener("error", function (ev) {
       if (m.thr !== null && m.thr !== undefined) {
         var tsrcTxt = m.thrSrc === "compiled"
           ? "compiled from published sources"
-          : m.thrSrc === "kfo"
-            ? ("KFO-Atlas, median of " + m.thrN + " published values"
-               + (m.thrLo && m.thrHi
-                  ? " spanning " + fmtPpb(m.thrLo) + "–" + fmtPpb(m.thrHi)
-                  : ""))
-            : "imputed from 5 neighbours in percept space, median error 3x";
+          : m.thrSrc === "kfo" ? kfoWords(m)
+          : "imputed from 5 neighbours in percept space, median error 3x";
         html += '<dl class="kv"><dt>Detection threshold</dt><dd>'
           + fmtPpb(m.thr) + " ppb<br><span class=\"note\">" + tsrcTxt
           + "</span></dd></dl>";
