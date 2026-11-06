@@ -1,1 +1,11 @@
 /.idea
+
+# Inputs to the LIBRARY's gap audit, not to the site. The Fraterworks
+# catalogue snapshot lands here because
+# olfactory-embeddings/scripts/audit_catalog_gap.py defaults to reading
+# molor/data/fraterworks_missing.json -- a tool in one repository writing into
+# another repository's tree. A `git add -A` in this one swept 9 MB of scraped
+# catalogue and two scrapers into a published commit (310fcb6); they belong to
+# the library repo, and this repository publishes exactly two HTML files.
+molor/data/
+molor/tools/
