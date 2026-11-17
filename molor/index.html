@@ -242,6 +242,29 @@ select { font: inherit; color: var(--fg); background: var(--surface);
   color: var(--muted); font-size: 12px; margin-top: 9px;
 }
 .empty { color: var(--muted); font-size: 12.5px; }
+/* The way out to the formula builder. It fills the rail's empty foot beside
+   the tall plot, so it is styled as an invitation, not as one more panel. */
+.cta {
+  display: flex; flex-direction: column; gap: 6px; text-decoration: none;
+  color: var(--fg); border-color: var(--accent);
+  background: linear-gradient(160deg, var(--accent-soft), var(--surface) 75%);
+  padding: 16px 15px; transition: transform .12s ease, box-shadow .12s ease;
+}
+.cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(10,111,125,.18); }
+.cta-kicker {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent); font-weight: 600;
+}
+.cta-title {
+  font-family: var(--font-display); font-size: 19px; font-weight: 700;
+  letter-spacing: -0.01em; line-height: 1.2;
+}
+.cta-text { color: var(--muted); font-size: 13px; }
+.cta-go {
+  align-self: flex-start; margin-top: 4px; background: var(--accent);
+  color: var(--surface); font-weight: 600; font-size: 13px;
+  padding: 8px 14px; border-radius: 999px;
+}
 footer { color: var(--muted); font-size: 12px; margin-top: 18px; max-width: 78ch; }
 footer strong { color: var(--fg); font-weight: 600; }
 </style>
@@ -289,6 +312,15 @@ footer strong { color: var(--fg); font-weight: 600; }
         <p class="note" id="volNote"></p>
         <p class="note">Click a class to show or hide it.</p>
       </div>
+      <a class="panel cta" id="perfumerCta"
+         href="https://singularity-perfumer.com/?utm_source=valkon&amp;utm_medium=referral&amp;utm_campaign=atlas">
+        <span class="cta-kicker">Built on this atlas</span>
+        <span class="cta-title">Bespoke perfume formula builder</span>
+        <span class="cta-text">Describe a mood, a memory or a season. Singularity
+          Perfumer turns it into a real formula from these materials and this
+          model: exact proportions, IFRA-aware, at the dilution you choose.</span>
+        <span class="cta-go">Build a formula &#8594;</span>
+      </a>
     </div>
   </div>
 

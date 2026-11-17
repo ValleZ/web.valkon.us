@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FireEdge — Apps by Valentin Konovalov</title>
-    <meta name="description" content="FireEdge builds Private AI (on-device AI for Android), Phone Call For Me (AI phone agent), Pool Pulse (pool chemistry), and Paper Wallet (Bitcoin), plus an olfactory receptor atlas and formula simplifier for perfumery.">
+    <meta name="description" content="FireEdge builds Private AI (on-device AI for Android), Phone Call For Me (AI phone agent), Pool Pulse (pool chemistry), and Paper Wallet (Bitcoin), plus perfumery tools: Singularity Perfumer, a bespoke perfume formula builder, an olfactory receptor atlas and a formula simplifier.">
     <link rel="canonical" href="https://valkon.us/">
     <style>
         * {
@@ -23,8 +23,11 @@
             background: #f5f5f5;
             color: #333;
         }
+        main { width: 100%; }
         .container {
-            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 900px;
             text-align: center;
         }
         h1 {
@@ -37,10 +40,16 @@
             color: #666;
             margin-bottom: 40px;
         }
+        /* Two columns on anything wider than a phone; a card marked .wide
+           takes the whole row. */
         .apps {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
+        }
+        .apps .wide { grid-column: 1 / -1; }
+        @media (max-width: 640px) {
+            .apps { grid-template-columns: minmax(0, 1fr); }
         }
         .app {
             background: white;
@@ -78,6 +87,23 @@
             margin-bottom: 6px;
         }
         .app.research .links { justify-content: flex-start; }
+        /* The one perfumery item that is a product rather than a research
+           page: same family, louder. */
+        .app.research.featured {
+            border-left-color: #0a6f7d;
+            background: linear-gradient(160deg, #e3f1f3, #ffffff 70%);
+        }
+        .app.research.featured .tag { color: #0a6f7d; }
+        .app .button {
+            display: inline-block;
+            background: #0a6f7d;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 999px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .app .button:hover { text-decoration: none; background: #085a66; }
         .app p {
             margin: 0 0 12px 0;
             color: #555;
@@ -125,7 +151,7 @@
 <main>
     <div class="container">
         <h1>FireEdge</h1>
-        <p class="tagline">Apps, and a research project about smell</p>
+        <p class="tagline">Apps, and tools for perfumery</p>
 
         <h2 class="section">Mobile Applications</h2>
 
@@ -163,15 +189,28 @@
             </div>
         </div>
 
-        <h2 class="section">Research</h2>
+        <h2 class="section">Perfumery</h2>
 
         <div class="apps">
+            <div class="app research featured wide">
+                <span class="tag">Web app</span>
+                <h3>Singularity Perfumer</h3>
+                <p>A bespoke perfume formula builder. Describe a mood, a memory
+                    or a season and get a real formula: aroma materials with
+                    exact proportions, IFRA-aware, at the dilution you choose.
+                    Built on the same model and materials as the atlas and the
+                    simplifier below.</p>
+                <div class="links">
+                    <a class="button" href="https://singularity-perfumer.com/?utm_source=valkon&amp;utm_medium=referral&amp;utm_campaign=home">Build a formula</a>
+                </div>
+            </div>
+
             <div class="app research">
                 <span class="tag">Olfaction</span>
                 <h3>Receptor atlas</h3>
                 <p>Every raw material in a perfumer's library, placed by the
                     response it is predicted to provoke across all 386
-                    functional human olfactory receptors. 361 points: single
+                    functional human olfactory receptors: single
                     molecules, essential oils rebuilt from their published GC
                     compositions, and the average of everything. Runs in the
                     browser.</p>
