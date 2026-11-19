@@ -657,12 +657,13 @@ window.addEventListener("error", function (ev) {
 
   //  Orthographic orbit. 128 points, so a painter's algorithm is plenty and
   //  keeps the page free of any 3D library.
-  var _rot = {x: [], y: [], d: []};
+  var _rot = {x: [], y: [], d: [], lo: 0, hi: 0};
   function rotateAll() {
     var p = P(), n = p.x.length;
     var cy = Math.cos(state.yaw), sy = Math.sin(state.yaw);
     var cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
     _rot.x.length = _rot.y.length = _rot.d.length = n;
+    var lo = Infinity, hi = -Infinity;
     for (var i = 0; i < n; i++) {
       var X = p.x[i], Y = p.y[i], Z = p.z ? p.z[i] : 0;
       var x1 = cy * X + sy * Z;
@@ -670,7 +671,20 @@ window.addEventListener("error", function (ev) {
       var y2 = cp * Y - sp * z1;
       var z2 = sp * Y + cp * z1;
       _rot.x[i] = x1; _rot.y[i] = y2; _rot.d[i] = z2;
+      if (z2 < lo) lo = z2;
+      if (z2 > hi) hi = z2;
     }
+    // The depth range once per frame: depthScale used to rescan every point
+    // for every point, quadratic in a cloud that is now 700 points.
+    _rot.lo = lo; _rot.hi = hi;
+    // Depth rank, 0 at the back and 1 at the front, for the fog. The range
+    // alone is set by a few outliers (the pyrazines sit far from everything),
+    // which leaves the crowd near mid-depth and barely fogged.
+    var ord = new Array(n);
+    for (i = 0; i < n; i++) ord[i] = i;
+    ord.sort(function (a, b) { return _rot.d[a] - _rot.d[b]; });
+    _rot.rank = new Array(n);
+    for (i = 0; i < n; i++) _rot.rank[ord[i]] = n > 1 ? i / (n - 1) : 0.5;
   }
   // The MDS axes come out in an arbitrary orientation, and the cloud usually
   // has one dominant direction. At a fixed starting angle that direction can
@@ -728,15 +742,25 @@ window.addEventListener("error", function (ev) {
   function sx(i) { return _rot.x[i] * state.k + state.tx; }
   function sy(i) { return -_rot.y[i] * state.k + state.ty; }
   function depth(i) { return _rot.d[i]; }
+  // 0 at the back of the cloud, 1 at the front.
+  function nearness(i) {
+    var lo = _rot.lo, hi = _rot.hi;
+    return hi > lo ? (_rot.d[i] - lo) / (hi - lo) : 0.5;
+  }
   function depthScale(i) {
     if (!is3D()) return 1;
-    var lo = Infinity, hi = -Infinity;
-    for (var k = 0; k < _rot.d.length; k++) {
-      if (_rot.d[k] < lo) lo = _rot.d[k];
-      if (_rot.d[k] > hi) hi = _rot.d[k];
-    }
-    var t = hi > lo ? (_rot.d[i] - lo) / (hi - lo) : 0.5;
-    return 0.72 + 0.46 * t;           // nearer = larger
+    return 0.72 + 0.46 * nearness(i);   // nearer = larger
+  }
+  // Depth fog: with 700 points the cloud read as one flat layer, size alone
+  // too weak a cue, so the far half fades toward the plot's own background
+  // (--surface, so it follows the light and dark themes). Clear in front,
+  // smoothly stronger behind the middle, at most FOG_MAX of the background.
+  var FOG_MAX = 0.7;
+  function fogOf(i) {
+    if (!is3D() || !_rot.rank) return 0;
+    var far = 1 - _rot.rank[i];
+    var t = Math.max(0, (far - 0.35) / 0.65);    // nothing in the front 35%
+    return FOG_MAX * t * t * (3 - 2 * t);         // smoothstep
   }
   function radius(i) {
     var base = state.sizeByPotency ? 4.2 + 7.5 * Math.min(1, M().total[i] / 22) : 6;
@@ -907,6 +931,19 @@ window.addEventListener("error", function (ev) {
       else if (rel < 0.25) { ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([2, 2]); }
       else { ctx.strokeStyle = surface; ctx.lineWidth = 1; }
       ctx.stroke(); ctx.setLineDash([]);
+      // Fog over the drawn mark, in the background colour; never on what is
+      // being looked at (selected, pinned, a search hit) nor on points the
+      // search already greys out.
+      var fog = (isSel || isPin || hit || D.molecules[idx].isQuery
+                 || (state.query && !hit)) ? 0 : fogOf(idx);
+      if (fog > 0.01) {
+        ctx.globalAlpha = fog;
+        ctx.fillStyle = surface;
+        ctx.fill();
+        ctx.strokeStyle = surface;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // labels, skipping ones that would overlap
