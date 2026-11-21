@@ -20,7 +20,7 @@
   const pct = v => v == null ? "–" : v.toFixed(0) + "%";
 
   // ------------------------------------------------------------------ params & factors
-  const P = { income: 150000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa" };
+  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5] };
 
   const DEMO = {
     wa: { label: "Non-Hispanic white + Asian", get: i => sum2(C.pct_nh_white[i], C.pct_nh_asian[i]) },
@@ -38,13 +38,27 @@
     return P.income * C.income_tax[i] / 100 + P.income * P.spend / 100 * C.sales_tax[i] / 100 + h * pr / 100;
   };
 
+  // Road danger: geometric mean of three FARS measures, each relative to the median county (1.0 = typical)
+  const median = arr => { const v = arr.filter(x => x != null).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
+  const ROAD = [
+    { key: "road_deaths_pc", label: "deaths/100k residents", eps: 0, fmt: v => v.toFixed(1) },
+    { key: "road_vru_pc", label: "ped+cyclist deaths/100k", eps: 0, fmt: v => v.toFixed(1) },
+    { key: "road_near", label: "fatal crashes/yr within 15 km", eps: 0.5, fmt: v => Math.round(v) + "" },
+  ];
+  ROAD.forEach(r => r.med = median(C[r.key]) + r.eps);
+  const roadIndex = i => {
+    let acc = 0, ws = 0;
+    ROAD.forEach((r, k) => { const v = C[r.key][i], w = P.roadW[k]; if (v == null || !w) return; acc += w * Math.log((v + r.eps) / r.med); ws += w; });
+    return ws ? Math.exp(acc / ws) : null;
+  };
+
   // best/worst are anchor raw values: score 1 at best, 0 at worst (clamped), interpolated linearly or in log space.
   const FACTORS = [
     { id: "home", label: "4-bed home price", color: "#ff7a7a", w: 3, best: 300000, worst: 1200000, log: true, fmt: money,
       get: i => C.home4[i], unit: "$",
       src: "Zillow ZHVI, 4-bedroom, county, latest month. Counties without a Zillow series use ACS median home value × national ratio.",
       flag: i => C.home4_imputed[i] ? "imputed from ACS" : "" },
-    { id: "tax", label: "Annual tax burden", color: "#ffb35c", w: 2, best: 8000, worst: 30000, log: false, fmt: money,
+    { id: "tax", label: "Annual tax burden", color: "#ffb35c", w: 2, best: 15000, worst: 55000, log: false, fmt: money,
       get: taxDollars, unit: "$/yr",
       src: "Reference household: state+local income tax (effective, approx. at $150k) + combined sales tax on taxable spending + county effective property tax rate (ACS median taxes ÷ median value) × local 4-bed price. Rates live in pipeline/ref/*.csv.",
       warn: "Prop-13 (CA) / Save-Our-Homes (FL) style caps mean a new buyer pays more than the county median rate suggests." },
@@ -65,6 +79,15 @@
       warn: "A POI count, not trail kilometres: it rewards places with many named trails and parks. USGS National Digital Trails (13 GB) would be the precise upgrade." },
     { id: "water", label: "Distance to sea / big lake", color: "#4aa8ff", w: 1, best: 3, worst: 150, log: true, fmt: km,
       get: i => C.water_km[i], src: "Natural Earth 1:10m ocean coastline + large lakes (incl. Great Lakes). Rivers and small lakes are not included." },
+    { id: "road", label: "Road danger", color: "#ff4d4d", w: 1.5, best: 0.6, worst: 3, log: true,
+      fmt: v => v == null ? "–" : v.toFixed(1) + "× typ.", get: roadIndex, road: true,
+      sub: i => ROAD.map(r => `${r.fmt(C[r.key][i])} ${r.label}`).join(" · "),
+      src: "NHTSA FARS " + (META.fars_years || 5) + " years (2020–2024), every fatal crash (" + (META.n_fars || 0).toLocaleString() + "), placed in counties by coordinates. Index = weighted geometric mean of the three measures, each divided by the median county; 1.0× = typical, 2× = twice as deadly. Per-resident rates are shrunk toward the national rate (100k person-year prior) so tiny counties aren't all-or-nothing.",
+      warn: "“Crashes within 15 km” grows with density (Manhattan scores high on it while having a very low per-resident rate), so it gets half weight by default. Fatal crashes only; injury crashes have no national dataset." },
+    { id: "bikewalk", label: "Bike/walk commuting", color: "#3ee0c8", w: 0.5, best: 10, worst: 1, log: true, fmt: v => v == null ? "–" : v.toFixed(1) + "%",
+      get: i => C.bikewalk_pct[i],
+      src: "ACS 2019–2023 5-year, table B08301: share of commuters who bike or walk to work (work-from-home excluded from the base).",
+      warn: "College towns and dense cores score high; it shows what people do, not whether the bike infrastructure is safe." },
     { id: "income", label: "Median household income", color: "#f2a65a", w: 1, best: 120000, worst: 45000, log: false, fmt: money,
       get: i => C.income[i], src: "ACS 2019–2023 5-year, table B19013. Direct affluence measure." },
     { id: "demo", label: "Demographics", color: "#c9c9c9", w: 0, best: 85, worst: 30, log: false, fmt: pct,
@@ -273,6 +296,7 @@
         <td class="v" title="${flag}">${val}${flag ? "*" : ""}</td>
         <td class="bar"><div class="sbar"><i style="width:${isFinite(s) ? s * 100 : 0}%;background:${f.color}"></i></div></td>
         <td class="pts">${pts != null ? "+" + pts.toFixed(1) : on ? "" : "off"}</td></tr>`;
+      if (f.sub && on) rows += `<tr class="dim"><td colspan="4" style="padding:0 0 3px 14px;font-size:11px">${f.sub(i)}</td></tr>`;
     }
     const rank = rankOf(i);
     return `<h3>${C.name[i]}, ${C.state[i]}</h3>
@@ -327,6 +351,7 @@
         <div class="detail">
           <div class="grid2">
             ${f.demo ? `<label>Group</label><select class="demo">${Object.entries(DEMO).map(([k, d]) => `<option value="${k}" ${k === P.demo ? "selected" : ""}>${d.label}</option>`).join("")}</select>` : ""}
+            ${f.road ? ROAD.map((r, k) => `<label>Weight: ${r.label}</label><input class="rw" data-k="${k}" type="number" min="0" step="0.5" value="${P.roadW[k]}">`).join("") : ""}
             <label>Best (score 1)</label><input class="best" type="number" value="${f.best}">
             <label>Worst (score 0)</label><input class="worst" type="number" value="${f.worst}">
             <label>Scale</label><select class="scale"><option value="lin" ${f.log ? "" : "selected"}>linear</option><option value="log" ${f.log ? "selected" : ""}>logarithmic</option></select>
@@ -343,6 +368,7 @@
       q(".worst").onchange = e => { f.worst = +e.target.value; schedule(); drawCurve(f, q(".curve")); };
       q(".scale").onchange = e => { f.log = e.target.value === "log"; schedule(); drawCurve(f, q(".curve")); };
       q(".deal").onchange = e => { f.dealbreaker = e.target.checked; schedule(); };
+      if (f.road) el.querySelectorAll(".rw").forEach(inp => inp.onchange = e => { P.roadW[+inp.dataset.k] = Math.max(0, +e.target.value || 0); schedule(); drawCurve(f, q(".curve")); });
       if (f.demo) q(".demo").onchange = e => { P.demo = e.target.value; schedule(); drawCurve(f, q(".curve")); };
       drawCurve(f, q(".curve"));
       fBox.appendChild(el);
@@ -406,7 +432,7 @@
 
   // ------------------------------------------------------------------ permalink state
   function saveHash() {
-    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo },
+    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW },
       F: Object.fromEntries(FACTORS.map(f => [f.id, [f.w, f.best, f.worst, f.log ? 1 : 0, f.dealbreaker ? 1 : 0]])) };
     history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(s)));
   }
