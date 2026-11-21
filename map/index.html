@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Move Map</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261121b">
 </head>
 <body>
 <div id="map"></div>
@@ -25,9 +25,12 @@
     </section>
 
     <section>
-      <div class="sec-h">Reference household <small>used for the tax factor</small></div>
+      <div class="sec-h">Reference household <small>used for the housing and tax factors</small></div>
+      <div class="kv"><label for="p-housing">Housing</label><select id="p-housing"><option value="own">Buy a 4-bed</option><option value="rent">Rent a 4-bed</option></select></div>
       <div class="kv"><label for="p-income">Household income</label><input id="p-income" type="number" step="10000" value="500000"></div>
+      <div class="kv"><label for="p-cg">Long-term capital gains (% of income)</label><input id="p-cg" type="number" min="0" max="100" step="5" value="0"></div>
       <div class="kv"><label for="p-spend">Taxable spending (% of income)</label><input id="p-spend" type="number" step="5" value="35"></div>
+      <label class="chk"><input id="p-newbuyer" type="checkbox" checked> New-buyer property tax <small>(CA Prop 13 / FL Save Our Homes reset on sale)</small></label>
     </section>
 
     <section>
@@ -59,6 +62,6 @@
 <div id="loading">Loading data…</div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20261121b"></script>
 </body>
 </html>

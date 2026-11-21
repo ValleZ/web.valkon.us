@@ -3,10 +3,12 @@
   "use strict";
 
   // ------------------------------------------------------------------ data
-  const [cj, gm, gbuf] = await Promise.all([
-    fetch("data/counties.json").then(r => r.json()),
-    fetch("data/grid.json").then(r => r.json()),
-    fetch("data/grid.bin").then(r => r.arrayBuffer()),
+  const DATA_V = "20261121b";  // bump when web/data changes so cached files are not mixed with new code
+  const [cj, gm, gbuf, ITAX] = await Promise.all([
+    fetch("data/counties.json?v=" + DATA_V).then(r => r.json()),
+    fetch("data/grid.json?v=" + DATA_V).then(r => r.json()),
+    fetch("data/grid.bin?v=" + DATA_V).then(r => r.arrayBuffer()),
+    fetch("data/income_tax.json?v=" + DATA_V).then(r => r.json()),
   ]);
   const C = cj.cols, META = cj.meta, N = C.geoid.length;
   const GRID = new Uint16Array(gbuf), GW = gm.w, GH = gm.h;
@@ -20,7 +22,7 @@
   const pct = v => v == null ? "–" : v.toFixed(0) + "%";
 
   // ------------------------------------------------------------------ params & factors
-  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5], hospW: [1, 1, 1], docW: [1, 1, 0.5], dry: true };
+  const P = { income: 500000, spend: 35, cg: 0, housing: "own", newBuyer: true, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5], hospW: [1, 1, 1], docW: [1, 1, 0.5], dry: true };
 
   const DEMO = {
     wa: { label: "Non-Hispanic white + Asian", get: i => sum2(C.pct_nh_white[i], C.pct_nh_asian[i]) },
@@ -32,11 +34,50 @@
   };
   function sum2(a, b) { return a == null || b == null ? null : a + b; }
 
-  const taxDollars = i => {
+  // progressive brackets [[from, rate%], ...] -> tax on x
+  const bt = (b, x) => {
+    let t = 0;
+    for (let k = 0; k < b.length; k++) {
+      const lo = b[k][0], hi = k + 1 < b.length ? b[k + 1][0] : Infinity;
+      if (x > lo) t += (Math.min(x, hi) - lo) * b[k][1] / 100;
+    }
+    return t;
+  };
+  // state + local income tax for the reference household; gains stack on top of ordinary income
+  function incomeTax(i) {
+    const s = ITAX.states[C.state[i]];
+    if (!s) return null;
+    const inc = P.income, g = inc * Math.min(100, Math.max(0, P.cg)) / 100, o = inc - g;
+    const so = bt(s.b, o);
+    let sg;
+    if (s.cgB) sg = bt(s.cgB, g);
+    else {
+      const gt = g * (s.cg ?? 1);
+      sg = bt(s.b, o + gt) - so;
+      if (s.cgMax != null) sg = Math.min(sg, gt * s.cgMax / 100);
+    }
+    if (s.cgExtra) { const e = s.cgExtra; sg += e.base === "income" ? (inc > e.over ? g * e.rate / 100 : 0) : Math.max(0, g - e.over) * e.rate / 100; }
+    const lc = ITAX.county[C.geoid[i]], lb = lc ? lc.b : s.local, lcg = lc ? lc.cg : s.localCG;
+    let lo = 0, lg = 0;
+    if (lb) { lo = bt(lb, o); if (lcg) lg = bt(lb, o + g) - lo; }
+    return { ord: so + lo, cg: sg + lg };
+  }
+  // property tax on the local 4-bed; renters pay none directly (it is inside the rent)
+  function propTax(i) {
+    if (P.housing === "rent") return 0;
     const h = C.home4[i], pr = C.prop_tax_rate[i];
     if (h == null || pr == null) return null;
-    return P.income * C.income_tax[i] / 100 + P.income * P.spend / 100 * C.sales_tax[i] / 100 + h * pr / 100;
-  };
+    let t = h * pr / 100;
+    const nb = P.newBuyer && ITAX.propNewBuyer && ITAX.propNewBuyer[C.state[i]];
+    if (nb) t = Math.max(t, Math.max(0, h - nb.exempt) * nb.rate / 100);
+    return t;
+  }
+  function taxParts(i) {
+    const it = incomeTax(i), prop = propTax(i);
+    if (prop == null || !it) return null;
+    return { inc: it.ord + it.cg, cg: it.cg, sales: P.income * P.spend / 100 * C.sales_tax[i] / 100, prop };
+  }
+  const taxDollars = i => { const t = taxParts(i); return t && t.inc + t.sales + t.prop; };
 
   // Road danger: geometric mean of three FARS measures, each relative to the median county (1.0 = typical)
   const median = arr => { const v = arr.filter(x => x != null).sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
@@ -81,14 +122,17 @@
 
   // best/worst are anchor raw values: score 1 at best, 0 at worst (clamped), interpolated linearly or in log space.
   const FACTORS = [
-    { id: "home", label: "4-bed home price", color: "#ff7a7a", w: 3, best: 300000, worst: 1200000, log: true, fmt: money,
-      get: i => C.home4[i], unit: "$",
-      src: "Zillow ZHVI, 4-bedroom, county, latest month. Counties without a Zillow series use ACS median home value × national ratio.",
-      flag: i => C.home4_imputed[i] ? "imputed from ACS" : "" },
-    { id: "tax", label: "Annual tax burden", color: "#ffb35c", w: 2, best: 15000, worst: 55000, log: false, fmt: money,
+    { id: "home", label: "4-bed home price", color: "#ff7a7a", w: 3, best: 300000, worst: 1200000, log: true,
+      fmt: v => v == null ? "–" : P.housing === "rent" ? "$" + Math.round(v).toLocaleString() + "/mo" : money(v),
+      get: i => P.housing === "rent" ? C.rent4[i] : C.home4[i], unit: "$",
+      housingToggle: true, anchors: { own: [300000, 1200000], rent: [1500, 4500] }, labels: { own: "4-bed home price", rent: "4-bed rent (monthly)" },
+      src: "Buy: Zillow ZHVI, 4-bedroom, county, latest month; counties without a Zillow series use ACS median home value × national ratio. Rent: HUD Fair Market Rent FY2026, 4 bedrooms, for the HUD rent area (metro or county) containing the county's population center. It is the 40th-percentile gross rent (rent + utilities) paid by recent movers, so a nicer house will cost more; whole metros share one value.",
+      flag: i => P.housing === "own" && C.home4_imputed[i] ? "imputed from ACS" : "" },
+    { id: "tax", label: "Annual tax burden", color: "#ffb35c", w: 2, best: 15000, worst: 65000, log: false, fmt: money,
       get: taxDollars, unit: "$/yr",
-      src: "Reference household: state+local income tax (effective, approx. at $150k) + combined sales tax on taxable spending + county effective property tax rate (ACS median taxes ÷ median value) × local 4-bed price. Rates live in pipeline/ref/*.csv.",
-      warn: "Prop-13 (CA) / Save-Our-Homes (FL) style caps mean a new buyer pays more than the county median rate suggests." },
+      sub: i => { const t = taxParts(i); return t ? `income ${money(t.inc)}${P.cg > 0 ? ` (on gains ${money(t.cg)})` : ""} · sales ${money(t.sales)} · property ${P.housing === "rent" ? "in rent" : money(t.prop)}` : ""; },
+      src: "Reference household: state + local income tax from 2025 married-filing-jointly brackets (capital-gains share taxed per state rules: WA's 7%/9.9% gains tax, exclusions in AR/AZ/ND/SC/VT/WI, MO exempt, HI/MT caps, MD surtax), plus combined sales tax on taxable spending, plus property tax: the county effective rate (ACS median taxes ÷ median value) × the local 4-bed price, raised to a new-buyer rate in CA (≈1.15%) and FL (≈1.75% above the $50k homestead exemption) when “new-buyer property tax” is on. Renters pay no property tax directly. Federal tax is the same everywhere and is left out. Deductions are ignored. Rates live in pipeline/ref/.",
+      warn: "Other states with caps that reset on sale (e.g. Michigan) still use the county median rate, which understates a new buyer's bill." },
     { id: "costco", label: "Distance to Costco", color: "#e8e05a", w: 1, best: 5, worst: 80, log: true, fmt: km,
       get: i => C.costco_km[i], src: "OpenStreetMap shop=wholesale with Costco brand tag (" + META.n_costco + " warehouses). Distance from county population center." },
     { id: "uniqlo", label: "Distance to Uniqlo", color: "#b48cff", w: 0.5, best: 15, worst: 500, log: true, fmt: km,
@@ -144,6 +188,7 @@
 
   // restore from URL hash
   loadHash();
+  { const f = FACTORS.find(x => x.housingToggle); f.label = f.labels[P.housing] || f.labels.own; }
 
   // ------------------------------------------------------------------ scoring
   const raw = {}, score = {};
@@ -398,6 +443,7 @@
         <div class="detail">
           <div class="grid2">
             ${f.demo ? `<label>Group</label><select class="demo">${Object.entries(DEMO).map(([k, d]) => `<option value="${k}" ${k === P.demo ? "selected" : ""}>${d.label}</option>`).join("")}</select>` : ""}
+            ${f.housingToggle ? `<label>Housing</label><select class="housing"><option value="own" ${P.housing === "own" ? "selected" : ""}>Buy</option><option value="rent" ${P.housing === "rent" ? "selected" : ""}>Rent</option></select>` : ""}
             ${f.dryToggle ? `<label>Dry days only</label><input class="dry" type="checkbox" ${P.dry ? "checked" : ""}>` : ""}
             ${f.subs ? f.subs.map((r, k) => `<label>Weight: ${r.label}</label><input class="rw" data-k="${k}" type="number" min="0" step="0.5" value="${P[f.subW][k]}">`).join("") : ""}
             <label>Best (score 1)</label><input class="best" type="number" value="${f.best}">
@@ -424,6 +470,7 @@
         q(".best").value = f.best; q(".worst").value = f.worst;
         schedule(); drawCurve(f, q(".curve"));
       };
+      if (f.housingToggle) q(".housing").onchange = e => setHousing(e.target.value);
       if (f.subs) el.querySelectorAll(".rw").forEach(inp => inp.onchange = e => { P[f.subW][+inp.dataset.k] = Math.max(0, +e.target.value || 0); schedule(); drawCurve(f, q(".curve")); });
       if (f.demo) q(".demo").onchange = e => { P.demo = e.target.value; schedule(); drawCurve(f, q(".curve")); };
       drawCurve(f, q(".curve"));
@@ -466,11 +513,26 @@
     for (const f of FACTORS) if (f.w > 0 || P.view === f.id) mk(f.id, f.label.replace(/ \(.*\)/, ""), f.color);
   }
 
+  // Buy/Rent switches the housing factor's data, label and (default) anchors, and drops property tax
+  function setHousing(v) {
+    const f = FACTORS.find(x => x.housingToggle), was = f.anchors[P.housing];
+    P.housing = v;
+    if (f.best === was[0] && f.worst === was[1]) [f.best, f.worst] = f.anchors[v];
+    f.label = f.labels[v];
+    document.getElementById("p-housing").value = v;
+    const open = [...document.querySelectorAll(".factor")].map(el => el.classList.contains("open"));
+    buildFactors();
+    document.querySelectorAll(".factor").forEach((el, k) => el.classList.toggle("open", open[k]));
+    schedule();
+  }
   function setView(v) { P.view = v; buildLayerbar(); document.querySelectorAll(".factor").forEach((el, k) => el.classList.toggle("viewing", FACTORS[k].id === v)); render(); saveHash(); }
 
   const bind = (id, key, ev, conv, fn) => { const el = document.getElementById(id); el.value = P[key]; el.addEventListener(ev, () => { P[key] = conv(el.value); fn(); }); };
   bind("p-income", "income", "change", Number, schedule);
   bind("p-spend", "spend", "change", Number, schedule);
+  bind("p-cg", "cg", "change", Number, schedule);
+  { const h = document.getElementById("p-housing"); h.value = P.housing; h.onchange = () => setHousing(h.value); }
+  { const nb = document.getElementById("p-newbuyer"); nb.checked = P.newBuyer; nb.onchange = () => { P.newBuyer = nb.checked; schedule(); }; }
   bind("p-smooth", "smooth", "input", Number, () => requestAnimationFrame(render));
   bind("p-opacity", "opacity", "input", Number, () => map.setPaintProperty("score", "raster-opacity", P.opacity));
   bind("p-minpop", "minPop", "change", Number, schedule);
@@ -488,7 +550,7 @@
 
   // ------------------------------------------------------------------ permalink state
   function saveHash() {
-    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW, hospW: P.hospW, docW: P.docW, dry: P.dry },
+    const s = { P: { income: P.income, spend: P.spend, cg: P.cg, housing: P.housing, newBuyer: P.newBuyer, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW, hospW: P.hospW, docW: P.docW, dry: P.dry },
       F: Object.fromEntries(FACTORS.map(f => [f.id, [f.w, f.best, f.worst, f.log ? 1 : 0, f.dealbreaker ? 1 : 0]])) };
     history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(s)));
   }
