@@ -20,7 +20,7 @@
   const pct = v => v == null ? "–" : v.toFixed(0) + "%";
 
   // ------------------------------------------------------------------ params & factors
-  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5], hospW: [1, 1, 1], docW: [1, 1, 0.5] };
+  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5], hospW: [1, 1, 1], docW: [1, 1, 0.5], dry: true };
 
   const DEMO = {
     wa: { label: "Non-Hispanic white + Asian", get: i => sum2(C.pct_nh_white[i], C.pct_nh_asian[i]) },
@@ -94,8 +94,14 @@
     { id: "uniqlo", label: "Distance to Uniqlo", color: "#b48cff", w: 0.5, best: 15, worst: 500, log: true, fmt: km,
       get: i => C.uniqlo_km[i], src: "OpenStreetMap + Overture Maps Uniqlo stores (" + META.n_uniqlo + " found).",
       warn: "Merged OSM + Overture Places; a few newer stores (e.g. Texas) may be missing. A coarse big-metro proxy." },
-    { id: "pleasant", label: "Pleasant days (15–28°C)", color: "#5ad19a", w: 2, best: 200, worst: 125, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
-      get: i => C.pleasant[i], src: "NOAA 1991–2020 daily normals (" + META.n_stations + " stations). Expected days/yr with daily high in 15–28°C, using each day's normal and std-dev; IDW from 4 nearest stations." },
+    { id: "pleasant", label: "Pleasant days (15–28°C)", color: "#5ad19a", w: 2, best: 160, worst: 100, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
+      get: i => P.dry ? C.pleasant_dry[i] : C.pleasant[i], dryToggle: true,
+      anchors: { dry: [160, 100], all: [200, 125] },
+      src: "NOAA 1991–2020 daily normals (" + META.n_stations + " stations). Expected days/yr with a daily high of 15–28°C, from each day's normal and std-dev. With “dry days only”, each day is also weighted by the chance it stays under 2.5 mm of rain (assumes temperature and rain are independent). IDW from the 4 nearest stations." },
+    { id: "rainy", label: "Rainy days (≥2.5 mm)", color: "#6f9bff", w: 0.5, best: 30, worst: 110, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
+      get: i => C.rainy[i],
+      src: "NOAA 1991–2020 daily precipitation normals: expected days/yr with at least 0.10\" (2.5 mm) of rain or melted snow, summed from each calendar day's probability; IDW from the 4 nearest of ~8,900 stations.",
+      warn: "With “dry days only” on, rain already lowers Pleasant days, so this weight adds a penalty for rain in every season (the winter drizzle in the Pacific Northwest, say)." },
     { id: "hot", label: "Hot days (>32°C)", color: "#ff5c8a", w: 0, best: 0, worst: 100, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
       get: i => C.hot[i], src: "Same NOAA normals: expected days/yr with daily high above 32°C." },
     { id: "frost", label: "Frost nights (<0°C)", color: "#7ad7ff", w: 0, best: 0, worst: 160, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
@@ -388,6 +394,7 @@
         <div class="detail">
           <div class="grid2">
             ${f.demo ? `<label>Group</label><select class="demo">${Object.entries(DEMO).map(([k, d]) => `<option value="${k}" ${k === P.demo ? "selected" : ""}>${d.label}</option>`).join("")}</select>` : ""}
+            ${f.dryToggle ? `<label>Dry days only</label><input class="dry" type="checkbox" ${P.dry ? "checked" : ""}>` : ""}
             ${f.subs ? f.subs.map((r, k) => `<label>Weight: ${r.label}</label><input class="rw" data-k="${k}" type="number" min="0" step="0.5" value="${P[f.subW][k]}">`).join("") : ""}
             <label>Best (score 1)</label><input class="best" type="number" value="${f.best}">
             <label>Worst (score 0)</label><input class="worst" type="number" value="${f.worst}">
@@ -405,6 +412,14 @@
       q(".worst").onchange = e => { f.worst = +e.target.value; schedule(); drawCurve(f, q(".curve")); };
       q(".scale").onchange = e => { f.log = e.target.value === "log"; schedule(); drawCurve(f, q(".curve")); };
       q(".deal").onchange = e => { f.dealbreaker = e.target.checked; schedule(); };
+      if (f.dryToggle) q(".dry").onchange = e => {
+        const was = P.dry ? f.anchors.dry : f.anchors.all;
+        P.dry = e.target.checked;
+        // swap anchors to the new mode's defaults unless the user already moved them
+        if (f.best === was[0] && f.worst === was[1]) [f.best, f.worst] = P.dry ? f.anchors.dry : f.anchors.all;
+        q(".best").value = f.best; q(".worst").value = f.worst;
+        schedule(); drawCurve(f, q(".curve"));
+      };
       if (f.subs) el.querySelectorAll(".rw").forEach(inp => inp.onchange = e => { P[f.subW][+inp.dataset.k] = Math.max(0, +e.target.value || 0); schedule(); drawCurve(f, q(".curve")); });
       if (f.demo) q(".demo").onchange = e => { P.demo = e.target.value; schedule(); drawCurve(f, q(".curve")); };
       drawCurve(f, q(".curve"));
@@ -469,7 +484,7 @@
 
   // ------------------------------------------------------------------ permalink state
   function saveHash() {
-    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW, hospW: P.hospW, docW: P.docW },
+    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW, hospW: P.hospW, docW: P.docW, dry: P.dry },
       F: Object.fromEntries(FACTORS.map(f => [f.id, [f.w, f.best, f.worst, f.log ? 1 : 0, f.dealbreaker ? 1 : 0]])) };
     history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(s)));
   }
