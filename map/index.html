@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Move Map</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<aside id="panel">
+  <header>
+    <h1>Move Map</h1>
+    <button id="collapse" title="Collapse panel">‹</button>
+  </header>
+  <div class="scroll">
+    <section class="formula">
+      <div class="f-main" id="formula-text"></div>
+      <div class="mode">
+        <label><input type="radio" name="mode" value="sum" checked> Weighted average <small>(strengths offset weaknesses)</small></label>
+        <label><input type="radio" name="mode" value="geo"> Weighted geometric <small>(one weak factor drags the score down hard)</small></label>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-h">Reference household <small>used for the tax factor</small></div>
+      <div class="kv"><label for="p-income">Household income</label><input id="p-income" type="number" step="10000" value="150000"></div>
+      <div class="kv"><label for="p-spend">Taxable spending (% of income)</label><input id="p-spend" type="number" step="5" value="35"></div>
+    </section>
+
+    <section>
+      <div class="sec-h">Factors <small>weight · click a row for its curve</small></div>
+      <div id="factors"></div>
+    </section>
+
+    <section>
+      <div class="sec-h">Display</div>
+      <div class="kv"><label for="p-smooth">Smoothing</label><input id="p-smooth" type="range" min="0" max="8" step="1" value="4"></div>
+      <div class="kv"><label for="p-opacity">Layer opacity</label><input id="p-opacity" type="range" min="0.2" max="1" step="0.05" value="0.78"></div>
+      <div class="kv"><label for="p-minpop">Hide counties under</label>
+        <select id="p-minpop"><option value="0">no limit</option><option value="10000">10k people</option><option value="50000">50k people</option><option value="200000">200k people</option></select></div>
+      <label class="chk"><input id="p-stretch" type="checkbox" checked> Stretch colors to the visible range of scores</label>
+    </section>
+
+    <section>
+      <div class="sec-h">Top counties <small id="top-sub"></small></div>
+      <ol id="top"></ol>
+    </section>
+
+    <section class="notes" id="notes"></section>
+  </div>
+</aside>
+
+<div id="layerbar"></div>
+<div id="legend"><div id="legend-title"></div><div id="legend-bar"></div><div id="legend-ticks"></div></div>
+<div id="hover" hidden></div>
+<div id="loading">Loading data…</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,429 @@
+/* Move Map — client-side scoring + windy-style smoothed raster layer. */
+(async function () {
+  "use strict";
+
+  // ------------------------------------------------------------------ data
+  const [cj, gm, gbuf] = await Promise.all([
+    fetch("data/counties.json").then(r => r.json()),
+    fetch("data/grid.json").then(r => r.json()),
+    fetch("data/grid.bin").then(r => r.arrayBuffer()),
+  ]);
+  const C = cj.cols, META = cj.meta, N = C.geoid.length;
+  const GRID = new Uint16Array(gbuf), GW = gm.w, GH = gm.h;
+  const mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+  const MY0 = mercY(gm.lat0), MY1 = mercY(gm.lat1);
+
+  // ------------------------------------------------------------------ formatting
+  const money = v => v == null ? "–" : v >= 1e6 ? "$" + (v / 1e6).toFixed(2) + "M" : "$" + Math.round(v / 1000) + "k";
+  const km = v => v == null ? "–" : v < 10 ? v.toFixed(1) + " km" : Math.round(v) + " km";
+  const num = d => v => v == null ? "–" : v.toFixed(d);
+  const pct = v => v == null ? "–" : v.toFixed(0) + "%";
+
+  // ------------------------------------------------------------------ params & factors
+  const P = { income: 150000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa" };
+
+  const DEMO = {
+    wa: { label: "Non-Hispanic white + Asian", get: i => sum2(C.pct_nh_white[i], C.pct_nh_asian[i]) },
+    w: { label: "Non-Hispanic white", get: i => C.pct_nh_white[i] },
+    a: { label: "Non-Hispanic Asian", get: i => C.pct_nh_asian[i] },
+    b: { label: "Non-Hispanic Black", get: i => C.pct_nh_black[i] },
+    h: { label: "Hispanic (any race)", get: i => C.pct_hispanic[i] },
+    div: { label: "Diversity index (0–100)", get: i => C.diversity[i] },
+  };
+  function sum2(a, b) { return a == null || b == null ? null : a + b; }
+
+  const taxDollars = i => {
+    const h = C.home4[i], pr = C.prop_tax_rate[i];
+    if (h == null || pr == null) return null;
+    return P.income * C.income_tax[i] / 100 + P.income * P.spend / 100 * C.sales_tax[i] / 100 + h * pr / 100;
+  };
+
+  // best/worst are anchor raw values: score 1 at best, 0 at worst (clamped), interpolated linearly or in log space.
+  const FACTORS = [
+    { id: "home", label: "4-bed home price", color: "#ff7a7a", w: 3, best: 300000, worst: 1200000, log: true, fmt: money,
+      get: i => C.home4[i], unit: "$",
+      src: "Zillow ZHVI, 4-bedroom, county, latest month. Counties without a Zillow series use ACS median home value × national ratio.",
+      flag: i => C.home4_imputed[i] ? "imputed from ACS" : "" },
+    { id: "tax", label: "Annual tax burden", color: "#ffb35c", w: 2, best: 8000, worst: 30000, log: false, fmt: money,
+      get: taxDollars, unit: "$/yr",
+      src: "Reference household: state+local income tax (effective, approx. at $150k) + combined sales tax on taxable spending + county effective property tax rate (ACS median taxes ÷ median value) × local 4-bed price. Rates live in pipeline/ref/*.csv.",
+      warn: "Prop-13 (CA) / Save-Our-Homes (FL) style caps mean a new buyer pays more than the county median rate suggests." },
+    { id: "costco", label: "Distance to Costco", color: "#e8e05a", w: 1, best: 5, worst: 80, log: true, fmt: km,
+      get: i => C.costco_km[i], src: "OpenStreetMap shop=wholesale with Costco brand tag (" + META.n_costco + " warehouses). Distance from county population center." },
+    { id: "uniqlo", label: "Distance to Uniqlo", color: "#b48cff", w: 0.5, best: 15, worst: 500, log: true, fmt: km,
+      get: i => C.uniqlo_km[i], src: "OpenStreetMap + Overture Maps Uniqlo stores (" + META.n_uniqlo + " found).",
+      warn: "Merged OSM + Overture Places; a few newer stores (e.g. Texas) may be missing. A coarse big-metro proxy." },
+    { id: "pleasant", label: "Pleasant days (15–28°C)", color: "#5ad19a", w: 2, best: 200, worst: 125, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
+      get: i => C.pleasant[i], src: "NOAA 1991–2020 daily normals (" + META.n_stations + " stations). Expected days/yr with daily high in 15–28°C, using each day's normal and std-dev; IDW from 4 nearest stations." },
+    { id: "hot", label: "Hot days (>32°C)", color: "#ff5c8a", w: 0, best: 0, worst: 100, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
+      get: i => C.hot[i], src: "Same NOAA normals: expected days/yr with daily high above 32°C." },
+    { id: "frost", label: "Frost nights (<0°C)", color: "#7ad7ff", w: 0, best: 0, worst: 160, log: false, fmt: v => v == null ? "–" : Math.round(v) + " d/yr",
+      get: i => C.frost[i], src: "Same NOAA normals: expected nights/yr with low below 0°C." },
+    { id: "hiking", label: "Trails & parks within 40 km", color: "#8fd14f", w: 1, best: 100, worst: 2, log: true, fmt: v => v == null ? "–" : Math.round(v) + "",
+      get: i => C.hiking_50km[i] == null ? null : C.hiking_50km[i] + 1, show: i => C.hiking_50km[i],
+      src: "Count of Overture Maps places tagged hiking trail, mountain-bike trail, national/state park, nature reserve or forest (" + META.n_hiking + " in the lower 48) within 40 km of the population center.",
+      warn: "A POI count, not trail kilometres: it rewards places with many named trails and parks. USGS National Digital Trails (13 GB) would be the precise upgrade." },
+    { id: "water", label: "Distance to sea / big lake", color: "#4aa8ff", w: 1, best: 3, worst: 150, log: true, fmt: km,
+      get: i => C.water_km[i], src: "Natural Earth 1:10m ocean coastline + large lakes (incl. Great Lakes). Rivers and small lakes are not included." },
+    { id: "income", label: "Median household income", color: "#f2a65a", w: 1, best: 120000, worst: 45000, log: false, fmt: money,
+      get: i => C.income[i], src: "ACS 2019–2023 5-year, table B19013. Direct affluence measure." },
+    { id: "demo", label: "Demographics", color: "#c9c9c9", w: 0, best: 85, worst: 30, log: false, fmt: pct,
+      get: i => DEMO[P.demo].get(i), src: "ACS 2019–2023 5-year, table B03002 (residents). Off by default; pick a group below.", demo: true },
+  ];
+  FACTORS.forEach(f => { f.dealbreaker = false; f.default = { w: f.w, best: f.best, worst: f.worst, log: f.log }; });
+
+  // restore from URL hash
+  loadHash();
+
+  // ------------------------------------------------------------------ scoring
+  const raw = {}, score = {};
+  FACTORS.forEach(f => { raw[f.id] = new Float32Array(N); score[f.id] = new Float32Array(N); });
+  const total = new Float32Array(N), excluded = new Uint8Array(N);
+
+  function curve(f, x) {
+    if (x == null || !isFinite(x)) return NaN;
+    let a = f.worst, b = f.best, v = x;
+    if (f.log) { a = Math.log(Math.max(a, 1e-3)); b = Math.log(Math.max(b, 1e-3)); v = Math.log(Math.max(v, 1e-3)); }
+    if (a === b) return v === a ? 1 : 0;
+    return Math.min(1, Math.max(0, (v - a) / (b - a)));
+  }
+
+  function compute() {
+    const act = FACTORS.filter(f => f.w > 0);
+    const W = act.reduce((s, f) => s + f.w, 0);
+    for (const f of FACTORS) {
+      const r = raw[f.id], s = score[f.id];
+      for (let i = 0; i < N; i++) { const x = f.get(i); r[i] = x == null ? NaN : x; s[i] = curve(f, r[i]); }
+    }
+    for (let i = 0; i < N; i++) {
+      let ex = (C.pop[i] || 0) < P.minPop;
+      let acc = P.mode === "sum" ? 0 : 0, wsum = 0;
+      for (const f of act) {
+        let s = score[f.id][i];
+        if (isNaN(s)) continue;            // missing data: renormalise over available factors
+        if (f.dealbreaker && s <= 0) ex = true;
+        if (P.mode === "sum") acc += f.w * s; else acc += f.w * Math.log(Math.max(s, 0.02));
+        wsum += f.w;
+      }
+      for (const f of FACTORS) if (f.w === 0 && f.dealbreaker && score[f.id][i] <= 0) ex = true;
+      excluded[i] = ex ? 1 : 0;
+      total[i] = wsum === 0 ? NaN : 100 * (P.mode === "sum" ? acc / wsum : Math.exp(acc / wsum));
+    }
+    return W;
+  }
+
+  // ------------------------------------------------------------------ raster
+  const canvas = document.createElement("canvas");
+  canvas.width = GW; canvas.height = GH;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(GW, GH);
+  const vals = new Float32Array(GW * GH), wts = new Float32Array(GW * GH);
+  const tmpV = new Float32Array(GW * GH), tmpW = new Float32Array(GW * GH);
+
+  // viridis-like ramp: works on dark basemap, colour-blind safe, high = good
+  const STOPS = [[0, [68, 1, 84]], [0.2, [65, 68, 135]], [0.4, [42, 120, 142]], [0.6, [34, 168, 132]], [0.8, [122, 209, 81]], [1, [253, 231, 37]]];
+  const LUT = new Uint8Array(256 * 3);
+  for (let k = 0; k < 256; k++) {
+    const t = k / 255; let j = 0; while (j < STOPS.length - 2 && t > STOPS[j + 1][0]) j++;
+    const [t0, c0] = STOPS[j], [t1, c1] = STOPS[j + 1], u = (t - t0) / (t1 - t0);
+    for (let c = 0; c < 3; c++) LUT[k * 3 + c] = Math.round(c0[c] + (c1[c] - c0[c]) * u);
+  }
+  const rampCss = "linear-gradient(90deg," + STOPS.map(([t, c]) => `rgb(${c}) ${t * 100}%`).join(",") + ")";
+
+  function boxBlur(src, dst, r, horiz) {
+    const n = horiz ? GW : GH, m = horiz ? GH : GW, st = horiz ? 1 : GW, lst = horiz ? GW : 1;
+    for (let l = 0; l < m; l++) {
+      const base = l * lst; let acc = 0;
+      for (let k = -r; k <= r; k++) { const q = Math.min(n - 1, Math.max(0, k)); acc += src[base + q * st]; }
+      for (let p = 0; p < n; p++) {
+        dst[base + p * st] = acc;
+        const add = Math.min(n - 1, p + r + 1), rem = Math.max(0, p - r);
+        acc += src[base + add * st] - src[base + rem * st];
+      }
+    }
+  }
+
+  let currentField = null, domain = [0, 100];
+
+  function viewField() {
+    if (P.view === "total") return { arr: total, scale: 1, label: "Goodness score" };
+    const f = FACTORS.find(x => x.id === P.view);
+    return { arr: score[f.id], scale: 100, label: f.label + " — factor score" };
+  }
+
+  function quantile(sorted, q) { return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))]; }
+
+  function render() {
+    const vf = viewField(); currentField = vf;
+    const a = vf.arr, sc = vf.scale;
+    const live = [];
+    for (let i = 0; i < N; i++) if (!excluded[i] && isFinite(a[i])) live.push(a[i] * sc);
+    live.sort((x, y) => x - y);
+    domain = P.stretch && live.length > 10 ? [quantile(live, 0.02), quantile(live, 0.98)] : [0, 100];
+    if (domain[1] - domain[0] < 1) domain = [Math.max(0, domain[0] - 1), domain[0] + 1];
+    const d0 = domain[0], dr = domain[1] - domain[0];
+
+    for (let p = 0; p < GW * GH; p++) {
+      const g = GRID[p];
+      if (g === 0) { vals[p] = 0; wts[p] = 0; continue; }
+      const i = g - 1, v = a[i];
+      if (excluded[i] || !isFinite(v)) { vals[p] = 0; wts[p] = 0; continue; }
+      vals[p] = v * sc; wts[p] = 1;
+    }
+    const r = P.smooth;
+    if (r > 0) {  // normalised convolution: 2 box passes ≈ gaussian, missing cells don't bleed zeros in
+      for (let pass = 0; pass < 2; pass++) {
+        boxBlur(vals, tmpV, r, true); boxBlur(tmpV, vals, r, false);
+        boxBlur(wts, tmpW, r, true); boxBlur(tmpW, wts, r, false);
+        if (pass === 0) for (let p = 0; p < GW * GH; p++) if (wts[p] > 0) { vals[p] /= wts[p]; wts[p] = 1; } else vals[p] = 0;
+      }
+    }
+    const D = imgData.data;
+    for (let p = 0; p < GW * GH; p++) {
+      const o = p * 4, g = GRID[p];
+      if (g === 0) { D[o + 3] = 0; continue; }
+      const i = g - 1;
+      if (excluded[i] || !isFinite(a[i])) {  // excluded / no data: dark hatch-grey
+        D[o] = 40; D[o + 1] = 42; D[o + 2] = 48; D[o + 3] = 170; continue;
+      }
+      const v = r > 0 ? (wts[p] > 0 ? vals[p] / wts[p] : a[i] * sc) : vals[p];
+      const k = Math.max(0, Math.min(255, Math.round((v - d0) / dr * 255))) * 3;
+      D[o] = LUT[k]; D[o + 1] = LUT[k + 1]; D[o + 2] = LUT[k + 2]; D[o + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const src = map.getSource("score");
+    if (src) { src.play(); requestAnimationFrame(() => requestAnimationFrame(() => src.pause())); }
+    drawLegend(vf);
+  }
+
+  function drawLegend(vf) {
+    document.getElementById("legend-title").textContent = vf.label + (P.stretch ? " (stretched)" : "");
+    document.getElementById("legend-bar").style.background = rampCss;
+    const t = document.getElementById("legend-ticks"); t.innerHTML = "";
+    for (let k = 0; k <= 4; k++) { const s = document.createElement("span"); s.textContent = Math.round(domain[0] + (domain[1] - domain[0]) * k / 4); t.appendChild(s); }
+  }
+
+  // ------------------------------------------------------------------ map
+  const map = new maplibregl.Map({
+    container: "map",
+    style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+    center: [-96, 38.5], zoom: 3.7, minZoom: 2.5, maxZoom: 11, attributionControl: { compact: true },
+    customAttribution: "Zillow · US Census ACS · NOAA · © OpenStreetMap · Natural Earth",
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+  let hoverGeoid = null;
+  map.on("load", () => {
+    const firstSymbol = map.getStyle().layers.find(l => l.type === "symbol");
+    map.addSource("score", { type: "canvas", canvas, animate: false,
+      coordinates: [[gm.lon0, gm.lat1], [gm.lon1, gm.lat1], [gm.lon1, gm.lat0], [gm.lon0, gm.lat0]] });
+    map.addLayer({ id: "score", type: "raster", source: "score", paint: { "raster-opacity": P.opacity, "raster-resampling": "linear", "raster-fade-duration": 0 } }, firstSymbol && firstSymbol.id);
+    map.addSource("counties", { type: "geojson", data: "data/counties.geojson" });
+    map.addLayer({ id: "county-hl", type: "line", source: "counties", filter: ["==", ["get", "geoid"], ""],
+      paint: { "line-color": "#ffffff", "line-width": 2 } }, firstSymbol && firstSymbol.id);
+    // put boundary lines above the heat layer (windy-style)
+    for (const l of map.getStyle().layers) if (l.type === "line" && /boundary|admin/i.test(l.id)) map.moveLayer(l.id, firstSymbol && firstSymbol.id);
+    recompute();
+    document.getElementById("loading").remove();
+  });
+
+  function countyAt(lngLat) {
+    const x = Math.floor((lngLat.lng - gm.lon0) / (gm.lon1 - gm.lon0) * GW);
+    const y = Math.floor((MY1 - mercY(lngLat.lat)) / (MY1 - MY0) * GH);
+    if (x < 0 || y < 0 || x >= GW || y >= GH) return -1;
+    return GRID[y * GW + x] - 1;
+  }
+
+  const hover = document.getElementById("hover");
+  let pinned = false;
+  map.on("mousemove", e => { if (!pinned) showHover(countyAt(e.lngLat), e.point); });
+  map.on("mouseout", () => { if (!pinned) hideHover(); });
+  map.on("click", e => { const i = countyAt(e.lngLat); if (i < 0) { pinned = false; hideHover(); return; } pinned = true; showHover(i, e.point); });
+
+  function hideHover() { hover.hidden = true; setHL(null); }
+  function setHL(g) { if (g === hoverGeoid) return; hoverGeoid = g; if (map.getLayer("county-hl")) map.setFilter("county-hl", ["==", ["get", "geoid"], g || ""]); }
+
+  function showHover(i, pt) {
+    if (i < 0) { hideHover(); return; }
+    setHL(C.geoid[i]);
+    hover.innerHTML = breakdownHTML(i);
+    hover.hidden = false;
+    const mw = map.getContainer().clientWidth, mh = map.getContainer().clientHeight;
+    const w = hover.offsetWidth, h = hover.offsetHeight;
+    let x = pt.x + 16, y = pt.y + 16;
+    if (x + w > mw - 8) x = pt.x - w - 16;
+    if (y + h > mh - 8) y = Math.max(8, mh - h - 8);
+    hover.style.left = x + "px"; hover.style.top = y + "px";
+  }
+
+  function breakdownHTML(i) {
+    const act = FACTORS.filter(f => f.w > 0 && isFinite(score[f.id][i]));
+    const W = act.reduce((s, f) => s + f.w, 0);
+    const t = total[i];
+    let stack = "", rows = "";
+    for (const f of FACTORS) {
+      const s = score[f.id][i], on = f.w > 0;
+      const pts = on && isFinite(s) && P.mode === "sum" ? 100 * f.w * s / W : null;
+      if (pts != null) stack += `<i style="width:${pts}%;background:${f.color}"></i>`;
+      const shown = f.show ? f.show(i) : raw[f.id][i];
+      const val = f.fmt(isFinite(shown) ? shown : null);
+      const flag = f.flag ? f.flag(i) : "";
+      const dead = f.dealbreaker && s <= 0;
+      rows += `<tr class="${on ? "" : "dim"}"><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${f.color};margin-right:6px"></span>${f.label}${dead ? ' <span class="x">✕</span>' : ""}</td>
+        <td class="v" title="${flag}">${val}${flag ? "*" : ""}</td>
+        <td class="bar"><div class="sbar"><i style="width:${isFinite(s) ? s * 100 : 0}%;background:${f.color}"></i></div></td>
+        <td class="pts">${pts != null ? "+" + pts.toFixed(1) : on ? "" : "off"}</td></tr>`;
+    }
+    const rank = rankOf(i);
+    return `<h3>${C.name[i]}, ${C.state[i]}</h3>
+      <div class="sub">pop ${(C.pop[i] || 0).toLocaleString()} · rank ${rank ? rank.toLocaleString() : "–"} of ${liveCount.toLocaleString()}${excluded[i] ? ' · <span class="x">excluded</span>' : ""}</div>
+      <div class="big">${isFinite(t) ? t.toFixed(1) : "–"}<small> / 100</small></div>
+      ${P.mode === "sum" ? `<div class="stack">${stack}</div>` : '<div class="sub">geometric mode: score = 100 × Π sᵢ^(wᵢ/Σw)</div>'}
+      <table><tr class="dim"><td>factor</td><td class="v">value</td><td>score</td><td class="pts">pts</td></tr>${rows}</table>`;
+  }
+
+  // ------------------------------------------------------------------ ranking
+  let order = [], rankIdx = new Int32Array(N), liveCount = 0;
+  function rerank() {
+    order = [];
+    for (let i = 0; i < N; i++) if (!excluded[i] && isFinite(total[i])) order.push(i);
+    order.sort((a, b) => total[b] - total[a]);
+    liveCount = order.length; rankIdx.fill(0);
+    order.forEach((i, k) => rankIdx[i] = k + 1);
+    const ol = document.getElementById("top"); ol.innerHTML = "";
+    for (const i of order.slice(0, 15)) {
+      const li = document.createElement("li");
+      li.innerHTML = `${C.name[i]}, ${C.state[i]}<span>${total[i].toFixed(1)}</span>`;
+      li.onclick = () => { map.flyTo({ center: [C.lon[i], C.lat[i]], zoom: 7.5 }); pinned = true; setTimeout(() => showHover(i, map.project([C.lon[i], C.lat[i]])), 1200); };
+      ol.appendChild(li);
+    }
+    document.getElementById("top-sub").textContent = `${liveCount.toLocaleString()} counties scored`;
+  }
+  const rankOf = i => rankIdx[i];
+
+  // ------------------------------------------------------------------ UI
+  function formulaText() {
+    const act = FACTORS.filter(f => f.w > 0);
+    const W = act.reduce((s, f) => s + f.w, 0);
+    const terms = act.map(f => `<span style="color:${f.color}">${(f.w / W * 100).toFixed(0)}%·s<sub>${f.id}</sub></span>`).join(" + ");
+    const head = P.mode === "sum" ? "Score = 100 × Σ wᵢ·sᵢ / Σ wᵢ" : "Score = 100 × Π sᵢ^(wᵢ/Σwᵢ)";
+    return `${head}<br>sᵢ = clamp((f(x) − f(worst)) / (f(best) − f(worst)), 0, 1), f = x or ln x<br><br>${terms || "<i>all weights are 0</i>"}`;
+  }
+
+  const fBox = document.getElementById("factors");
+  function buildFactors() {
+    fBox.innerHTML = "";
+    for (const f of FACTORS) {
+      const el = document.createElement("div");
+      el.className = "factor" + (f.w > 0 ? "" : " off") + (P.view === f.id ? " viewing" : "");
+      el.innerHTML = `
+        <div class="row">
+          <span class="dot" style="background:${f.color}"></span>
+          <span class="name" title="${f.label}">${f.label}</span>
+          <input class="w" type="range" min="0" max="5" step="0.5" value="${f.w}" aria-label="${f.label} weight">
+          <span class="wv">${f.w}</span>
+          <button class="eye" title="Show this factor on the map">◉</button>
+        </div>
+        <div class="detail">
+          <div class="grid2">
+            ${f.demo ? `<label>Group</label><select class="demo">${Object.entries(DEMO).map(([k, d]) => `<option value="${k}" ${k === P.demo ? "selected" : ""}>${d.label}</option>`).join("")}</select>` : ""}
+            <label>Best (score 1)</label><input class="best" type="number" value="${f.best}">
+            <label>Worst (score 0)</label><input class="worst" type="number" value="${f.worst}">
+            <label>Scale</label><select class="scale"><option value="lin" ${f.log ? "" : "selected"}>linear</option><option value="log" ${f.log ? "selected" : ""}>logarithmic</option></select>
+          </div>
+          <label class="chk"><input class="deal" type="checkbox" ${f.dealbreaker ? "checked" : ""}> Dealbreaker: hide areas at or past “worst”</label>
+          <div class="curve"></div>
+          <div class="src">${f.src}${f.warn ? `<br><span class="warn">⚠ ${f.warn}</span>` : ""}</div>
+        </div>`;
+      const q = s => el.querySelector(s);
+      q(".name").onclick = () => el.classList.toggle("open");
+      q(".w").oninput = e => { f.w = +e.target.value; q(".wv").textContent = f.w; el.classList.toggle("off", f.w === 0); schedule(); };
+      q(".eye").onclick = () => setView(P.view === f.id ? "total" : f.id);
+      q(".best").onchange = e => { f.best = +e.target.value; schedule(); drawCurve(f, q(".curve")); };
+      q(".worst").onchange = e => { f.worst = +e.target.value; schedule(); drawCurve(f, q(".curve")); };
+      q(".scale").onchange = e => { f.log = e.target.value === "log"; schedule(); drawCurve(f, q(".curve")); };
+      q(".deal").onchange = e => { f.dealbreaker = e.target.checked; schedule(); };
+      if (f.demo) q(".demo").onchange = e => { P.demo = e.target.value; schedule(); drawCurve(f, q(".curve")); };
+      drawCurve(f, q(".curve"));
+      fBox.appendChild(el);
+    }
+  }
+
+  // tiny histogram of the factor's raw values with the scoring curve on top
+  function drawCurve(f, host) {
+    const vals = [];
+    for (let i = 0; i < N; i++) { const x = f.get(i); if (x != null && isFinite(x)) vals.push(x); }
+    if (!vals.length) { host.innerHTML = ""; return; }
+    vals.sort((a, b) => a - b);
+    let lo = quantile(vals, 0.01), hi = quantile(vals, 0.99);
+    lo = Math.min(lo, f.best, f.worst); hi = Math.max(hi, f.best, f.worst);
+    const T = f.log ? x => Math.log(Math.max(x, 1e-3)) : x => x;
+    const tl = T(lo), th = T(hi), B = 40, bins = new Array(B).fill(0);
+    for (const v of vals) { const b = Math.floor((T(v) - tl) / (th - tl) * B); if (b >= 0 && b < B) bins[b]++; }
+    const mx = Math.max(...bins), Wd = 300, Hd = 54;
+    let svg = `<svg viewBox="0 0 ${Wd} ${Hd + 14}" width="100%" style="display:block">`;
+    bins.forEach((c, b) => { const h = c / mx * (Hd - 6); svg += `<rect x="${b * Wd / B + .5}" y="${Hd - h}" width="${Wd / B - 1}" height="${h}" fill="rgba(255,255,255,.18)"/>`; });
+    let path = "";
+    for (let k = 0; k <= 100; k++) { const tx = tl + (th - tl) * k / 100; const x = f.log ? Math.exp(tx) : tx; path += (k ? "L" : "M") + (k * Wd / 100).toFixed(1) + "," + (Hd - curve(f, x) * (Hd - 6)).toFixed(1); }
+    svg += `<path d="${path}" fill="none" stroke="${f.color}" stroke-width="2"/>`;
+    svg += `<text x="0" y="${Hd + 12}" fill="#8d96a3" font-size="10">${f.fmt(lo)}</text><text x="${Wd}" y="${Hd + 12}" fill="#8d96a3" font-size="10" text-anchor="end">${f.fmt(hi)}</text>`;
+    svg += `<text x="${Wd / 2}" y="${Hd + 12}" fill="#8d96a3" font-size="10" text-anchor="middle">counties (bars) · score curve (line)</text></svg>`;
+    host.innerHTML = svg;
+  }
+
+  function buildLayerbar() {
+    const bar = document.getElementById("layerbar"); bar.innerHTML = "";
+    const mk = (id, label, color) => {
+      const b = document.createElement("button");
+      b.className = P.view === id ? "on" : "";
+      b.innerHTML = (color ? `<span class="d" style="background:${color}"></span>` : "") + label;
+      b.onclick = () => setView(id);
+      bar.appendChild(b);
+    };
+    mk("total", "Total score");
+    for (const f of FACTORS) if (f.w > 0 || P.view === f.id) mk(f.id, f.label.replace(/ \(.*\)/, ""), f.color);
+  }
+
+  function setView(v) { P.view = v; buildLayerbar(); document.querySelectorAll(".factor").forEach((el, k) => el.classList.toggle("viewing", FACTORS[k].id === v)); render(); saveHash(); }
+
+  const bind = (id, key, ev, conv, fn) => { const el = document.getElementById(id); el.value = P[key]; el.addEventListener(ev, () => { P[key] = conv(el.value); fn(); }); };
+  bind("p-income", "income", "change", Number, schedule);
+  bind("p-spend", "spend", "change", Number, schedule);
+  bind("p-smooth", "smooth", "input", Number, () => requestAnimationFrame(render));
+  bind("p-opacity", "opacity", "input", Number, () => map.setPaintProperty("score", "raster-opacity", P.opacity));
+  bind("p-minpop", "minPop", "change", Number, schedule);
+  const st = document.getElementById("p-stretch"); st.checked = P.stretch; st.onchange = () => { P.stretch = st.checked; render(); };
+  document.querySelectorAll('input[name=mode]').forEach(r => { r.checked = r.value === P.mode; r.onchange = () => { P.mode = r.value; schedule(); }; });
+  document.getElementById("collapse").onclick = () => document.getElementById("panel").classList.toggle("collapsed");
+
+  let pending = false;
+  function schedule() { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; recompute(); }); }
+  function recompute() {
+    compute(); rerank(); render(); buildLayerbar();
+    document.getElementById("formula-text").innerHTML = formulaText();
+    saveHash();
+  }
+
+  // ------------------------------------------------------------------ permalink state
+  function saveHash() {
+    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo },
+      F: Object.fromEntries(FACTORS.map(f => [f.id, [f.w, f.best, f.worst, f.log ? 1 : 0, f.dealbreaker ? 1 : 0]])) };
+    history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(s)));
+  }
+  function loadHash() {
+    try {
+      if (!location.hash) return;
+      const s = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      Object.assign(P, s.P || {});
+      for (const f of FACTORS) { const v = s.F && s.F[f.id]; if (v) [f.w, f.best, f.worst, f.log, f.dealbreaker] = [v[0], v[1], v[2], !!v[3], !!v[4]]; }
+    } catch (e) { /* ignore bad hash */ }
+  }
+
+  document.getElementById("notes").innerHTML = `
+    <p><b>Unit:</b> ${N.toLocaleString()} counties (lower 48 + DC). Point-based factors are measured from each county's 2020 population center, so large western counties are approximated by where people live.</p>
+    <p><b>Data:</b> Zillow ZHVI 4BR (${META.zillow_month}), ACS 2019–23 5-yr, NOAA 1991–2020 normals, OpenStreetMap, Natural Earth, Tax Foundation-style state rates (approx., editable in <code>pipeline/ref/</code>).</p>
+    <p>Settings are saved in the URL, so you can bookmark a weighting.</p>`;
+
+  buildFactors();
+  buildLayerbar();
+})();
