@@ -20,7 +20,7 @@
   const pct = v => v == null ? "–" : v.toFixed(0) + "%";
 
   // ------------------------------------------------------------------ params & factors
-  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5] };
+  const P = { income: 500000, spend: 35, mode: "sum", smooth: 4, opacity: 0.78, minPop: 0, stretch: true, view: "total", demo: "wa", roadW: [1, 1, 0.5], hospW: [1, 1, 1], docW: [1, 1, 0.5] };
 
   const DEMO = {
     wa: { label: "Non-Hispanic white + Asian", get: i => sum2(C.pct_nh_white[i], C.pct_nh_asian[i]) },
@@ -52,6 +52,33 @@
     return ws ? Math.exp(acc / ws) : null;
   };
 
+  // Hospitals: 0-100 from three sub-curves; a missing star rating counts as unknown, not bad
+  const lin01 = (x, worst, best, log) => {
+    if (x == null || !isFinite(x)) return NaN;
+    if (log) { x = Math.log(Math.max(x, 1e-3)); worst = Math.log(worst); best = Math.log(best); }
+    return Math.min(1, Math.max(0, (x - worst) / (best - worst)));
+  };
+  const HOSP = [
+    { key: "er_km", label: "km to nearest hospital", sc: x => lin01(x, 40, 3, true), fmt: v => v == null ? "–" : v.toFixed(v < 10 ? 1 : 0) },
+    { key: "best_star_40", label: "best CMS stars within 40 km", sc: x => lin01(x, 2, 5, false), fmt: v => v == null ? "none rated" : v + "★" },
+    { key: "trauma_km", label: "km to Level I/II trauma", sc: x => lin01(x, 150, 10, true), fmt: v => v == null ? "–" : Math.round(v) + "" },
+  ];
+  const hospScore = i => {
+    let acc = 0, ws = 0;
+    HOSP.forEach((h, k) => { const s = h.sc(C[h.key][i]), w = P.hospW[k]; if (isNaN(s) || !w) return; acc += w * s; ws += w; });
+    return ws ? 100 * acc / ws : null;
+  };
+  // Doctors: geometric mean of per-capita supply within 30 km, each relative to the median county
+  const DOC = [
+    { key: "pcp_100k", label: "primary care/100k" }, { key: "spec_100k", label: "specialists/100k" }, { key: "mh_100k", label: "mental health/100k" },
+  ];
+  DOC.forEach(r => r.med = median(C[r.key]));
+  const docIndex = i => {
+    let acc = 0, ws = 0;
+    DOC.forEach((r, k) => { const v = C[r.key][i], w = P.docW[k]; if (v == null || !w) return; acc += w * Math.log(v / r.med); ws += w; });
+    return ws ? Math.exp(acc / ws) : null;
+  };
+
   // best/worst are anchor raw values: score 1 at best, 0 at worst (clamped), interpolated linearly or in log space.
   const FACTORS = [
     { id: "home", label: "4-bed home price", color: "#ff7a7a", w: 3, best: 300000, worst: 1200000, log: true, fmt: money,
@@ -80,10 +107,20 @@
     { id: "water", label: "Distance to sea / big lake", color: "#4aa8ff", w: 1, best: 3, worst: 150, log: true, fmt: km,
       get: i => C.water_km[i], src: "Natural Earth 1:10m ocean coastline + large lakes (incl. Great Lakes). Rivers and small lakes are not included." },
     { id: "road", label: "Road danger", color: "#ff4d4d", w: 1.5, best: 0.6, worst: 3, log: true,
-      fmt: v => v == null ? "–" : v.toFixed(1) + "× typ.", get: roadIndex, road: true,
+      fmt: v => v == null ? "–" : v.toFixed(1) + "× typ.", get: roadIndex, subs: ROAD, subW: "roadW",
       sub: i => ROAD.map(r => `${r.fmt(C[r.key][i])} ${r.label}`).join(" · "),
       src: "NHTSA FARS " + (META.fars_years || 5) + " years (2020–2024), every fatal crash (" + (META.n_fars || 0).toLocaleString() + "), placed in counties by coordinates. Index = weighted geometric mean of the three measures, each divided by the median county; 1.0× = typical, 2× = twice as deadly. Per-resident rates are shrunk toward the national rate (100k person-year prior) so tiny counties aren't all-or-nothing.",
       warn: "“Crashes within 15 km” grows with density (Manhattan scores high on it while having a very low per-resident rate), so it gets half weight by default. Fatal crashes only; injury crashes have no national dataset." },
+    { id: "hosp", label: "Hospitals", color: "#ff8fd0", w: 1.5, best: 90, worst: 30, log: false,
+      fmt: v => v == null ? "–" : Math.round(v) + "/100", get: hospScore, subs: HOSP, subW: "hospW",
+      sub: i => HOSP.map(h => `${h.fmt(C[h.key][i])} ${h.label}`).join(" · "),
+      src: "Sub-scores (0–1): nearest acute/critical-access hospital (3 km → 1, 40 km → 0, log); best CMS overall star rating within 40 km (5★ → 1, 2★ → 0); nearest adult Level I/II trauma center (10 km → 1, 150 km → 0, log). CMS Hospital General Information (" + (META.n_hosp || 0).toLocaleString() + " hospitals, " + (META.n_rated || 0).toLocaleString() + " rated, Oct 2026), geocoded with the Census geocoder; trauma levels from HIFLD (" + (META.n_trauma || 0) + " Level I/II).",
+      warn: "About 40% of hospitals have no CMS star rating (mostly small and rural); where none within 40 km is rated, that part is skipped rather than scored as bad. Trauma levels are from 2019." },
+    { id: "docs", label: "Doctors nearby", color: "#c58bff", w: 1, best: 2, worst: 0.4, log: true,
+      fmt: v => v == null ? "–" : v.toFixed(1) + "× typ.", get: docIndex, subs: DOC, subW: "docW",
+      sub: i => DOC.map(r => `${Math.round(C[r.key][i])} ${r.label}`).join(" · "),
+      src: "CMS Doctors & Clinicians national file (Oct 2026): Medicare-enrolled physicians and mental-health clinicians by practice ZIP, counted within 30 km of the population center per 100k residents in that radius. Index = weighted geometric mean of the three rates vs the median county.",
+      warn: "Medicare-enrolled clinicians only (most physicians are, but some concierge and pediatric practices aren't). Measures supply, not wait times or whether practices take new patients." },
     { id: "bikewalk", label: "Bike/walk commuting", color: "#3ee0c8", w: 0.5, best: 10, worst: 1, log: true, fmt: v => v == null ? "–" : v.toFixed(1) + "%",
       get: i => C.bikewalk_pct[i],
       src: "ACS 2019–2023 5-year, table B08301: share of commuters who bike or walk to work (work-from-home excluded from the base).",
@@ -351,7 +388,7 @@
         <div class="detail">
           <div class="grid2">
             ${f.demo ? `<label>Group</label><select class="demo">${Object.entries(DEMO).map(([k, d]) => `<option value="${k}" ${k === P.demo ? "selected" : ""}>${d.label}</option>`).join("")}</select>` : ""}
-            ${f.road ? ROAD.map((r, k) => `<label>Weight: ${r.label}</label><input class="rw" data-k="${k}" type="number" min="0" step="0.5" value="${P.roadW[k]}">`).join("") : ""}
+            ${f.subs ? f.subs.map((r, k) => `<label>Weight: ${r.label}</label><input class="rw" data-k="${k}" type="number" min="0" step="0.5" value="${P[f.subW][k]}">`).join("") : ""}
             <label>Best (score 1)</label><input class="best" type="number" value="${f.best}">
             <label>Worst (score 0)</label><input class="worst" type="number" value="${f.worst}">
             <label>Scale</label><select class="scale"><option value="lin" ${f.log ? "" : "selected"}>linear</option><option value="log" ${f.log ? "selected" : ""}>logarithmic</option></select>
@@ -368,7 +405,7 @@
       q(".worst").onchange = e => { f.worst = +e.target.value; schedule(); drawCurve(f, q(".curve")); };
       q(".scale").onchange = e => { f.log = e.target.value === "log"; schedule(); drawCurve(f, q(".curve")); };
       q(".deal").onchange = e => { f.dealbreaker = e.target.checked; schedule(); };
-      if (f.road) el.querySelectorAll(".rw").forEach(inp => inp.onchange = e => { P.roadW[+inp.dataset.k] = Math.max(0, +e.target.value || 0); schedule(); drawCurve(f, q(".curve")); });
+      if (f.subs) el.querySelectorAll(".rw").forEach(inp => inp.onchange = e => { P[f.subW][+inp.dataset.k] = Math.max(0, +e.target.value || 0); schedule(); drawCurve(f, q(".curve")); });
       if (f.demo) q(".demo").onchange = e => { P.demo = e.target.value; schedule(); drawCurve(f, q(".curve")); };
       drawCurve(f, q(".curve"));
       fBox.appendChild(el);
@@ -432,7 +469,7 @@
 
   // ------------------------------------------------------------------ permalink state
   function saveHash() {
-    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW },
+    const s = { P: { income: P.income, spend: P.spend, mode: P.mode, smooth: P.smooth, minPop: P.minPop, view: P.view, demo: P.demo, roadW: P.roadW, hospW: P.hospW, docW: P.docW },
       F: Object.fromEntries(FACTORS.map(f => [f.id, [f.w, f.best, f.worst, f.log ? 1 : 0, f.dealbreaker ? 1 : 0]])) };
     history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(s)));
   }
