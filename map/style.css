@@ -89,10 +89,53 @@ section { border-top: 1px solid var(--line); padding: 10px 0; }
 
 #loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 10; font-size: 15px; color: var(--muted); }
 
+#hover .hx { display: none; float: right; margin: -4px -4px 0 8px; background: none; border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; width: 34px; height: 34px; font-size: 20px; line-height: 1; cursor: pointer; }
+#layerbar button { white-space: nowrap; }
+
+/* phones: map first, settings in a bottom sheet, county details in a dismissable card */
 @media (max-width: 760px) {
-  #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 46vh; border-radius: 12px 12px 0 0; }
-  #panel.collapsed { transform: translateY(calc(100% - 46px)); }
-  #layerbar { left: 12px; right: 12px; overflow-x: auto; flex-wrap: nowrap; }
-  #legend { left: 12px; right: 12px; width: auto; bottom: calc(46vh + 10px); }
-  #hover { width: calc(100% - 24px); left: 12px !important; top: 60px !important; }
+  html, body { height: 100dvh; overflow: hidden; }
+  #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 64dvh; border-radius: 14px 14px 0 0; border-bottom: 0; }
+  #panel.collapsed { transform: translateY(calc(100% - 50px)); }
+  #panel header { cursor: pointer; min-height: 50px; padding: 8px 14px; touch-action: manipulation; }
+  #panel h1 { font-size: 16px; }
+  #panel.collapsed h1::after { content: "  ·  tap for weights & top counties"; color: var(--muted); font-weight: 400; font-size: 12px; }
+  #collapse { width: 34px; height: 34px; font-size: 16px; transform: rotate(-90deg); }
+  #panel.collapsed #collapse { transform: rotate(90deg); }
+  .scroll { padding-bottom: calc(16px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+  /* 16px keeps iOS Safari from zooming into focused inputs */
+  input, select { font-size: 16px; }
+  .kv { margin: 6px 0; }
+  .kv input[type=number], .kv select { width: 150px; padding: 5px 8px; }
+  .kv input[type=range] { width: 150px; }
+  .chk { padding: 4px 0; }
+  .chk input { width: 18px; height: 18px; }
+  .factor { padding: 4px 6px 4px 8px; }
+  .factor .row { grid-template-columns: 10px 1fr 112px 28px 34px; gap: 6px; }
+  .factor .name { padding: 8px 0; }
+  .factor .w { width: 112px; }
+  .factor .eye { font-size: 20px; height: 34px; }
+  .factor .detail { margin-left: 0; }
+  .factor .detail .grid2 { grid-template-columns: 1fr auto; }
+  .factor .detail input[type=number], .factor .detail select { width: 130px; padding: 4px 8px; }
+  #top li { padding: 7px 0; }
+  #layerbar { top: 8px; left: 8px; right: 8px; flex-wrap: nowrap; overflow-x: auto; pointer-events: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #layerbar::-webkit-scrollbar { display: none; }
+  #layerbar button { flex: none; padding: 7px 12px; }
+  #legend { left: 8px; right: 8px; width: auto; bottom: calc(58px + env(safe-area-inset-bottom)); padding: 6px 10px; }
+  #legend-title { font-size: 12px; margin-bottom: 3px; }
+  #hover { left: 8px !important; right: 8px; top: 52px !important; width: auto; max-height: 55dvh; overflow-y: auto;
+    pointer-events: auto; overscroll-behavior: contain; }
+  #hover .hx { display: block; }
+  #panel:not(.collapsed) ~ #legend { display: none; }
+  /* on a phone the weights and the ranking matter first; the formula text moves down */
+  .scroll { display: flex; flex-direction: column; }
+  .scroll > section:nth-child(3) { order: 1; border-top: 0; }
+  .scroll > section:nth-child(5) { order: 2; }
+  .scroll > section:nth-child(2) { order: 3; }
+  .scroll > section:nth-child(1) { order: 4; }
+  .scroll > section:nth-child(4) { order: 5; }
+  .scroll > section:nth-child(6) { order: 6; }
+  .maplibregl-ctrl-bottom-right { bottom: calc(108px + env(safe-area-inset-bottom)); }
 }

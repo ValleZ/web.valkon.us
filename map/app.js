@@ -3,7 +3,7 @@
   "use strict";
 
   // ------------------------------------------------------------------ data
-  const DATA_V = "20261121b";  // bump when web/data changes so cached files are not mixed with new code
+  const DATA_V = "20261122a";  // bump when web/data changes so cached files are not mixed with new code
   const [cj, gm, gbuf, ITAX] = await Promise.all([
     fetch("data/counties.json?v=" + DATA_V).then(r => r.json()),
     fetch("data/grid.json?v=" + DATA_V).then(r => r.json()),
@@ -319,13 +319,20 @@
   }
 
   // ------------------------------------------------------------------ map
+  const isPhone = () => matchMedia("(max-width: 760px)").matches;
+  const panel = document.getElementById("panel");
+  if (isPhone()) panel.classList.add("collapsed");  // phones open on the map; the sheet peeks from the bottom
   const map = new maplibregl.Map({
     container: "map",
     style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-    center: [-96, 38.5], zoom: 3.7, minZoom: 2.5, maxZoom: 11, attributionControl: { compact: true },
-    customAttribution: "Zillow · US Census ACS · NOAA · © OpenStreetMap · Natural Earth",
+    ...(isPhone()
+      ? { bounds: [[-124.8, 24.5], [-66.9, 49.4]], fitBoundsOptions: { padding: { top: 56, bottom: 120, left: 8, right: 8 } } }
+      : { center: [-96, 38.5], zoom: 3.7 }),
+    minZoom: 2, maxZoom: 11, attributionControl: { compact: true }, dragRotate: false, touchPitch: false,
+    customAttribution: "Zillow · US Census ACS · HUD · NOAA · © OpenStreetMap · Natural Earth",
   });
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  map.touchZoomRotate.disableRotation();
+  if (!isPhone()) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
   let hoverGeoid = null;
   map.on("load", () => {
@@ -363,6 +370,7 @@
     setHL(C.geoid[i]);
     hover.innerHTML = breakdownHTML(i);
     hover.hidden = false;
+    if (isPhone()) { hover.scrollTop = 0; return; }  // CSS docks the card under the layer chips
     const mw = map.getContainer().clientWidth, mh = map.getContainer().clientHeight;
     const w = hover.offsetWidth, h = hover.offsetHeight;
     let x = pt.x + 16, y = pt.y + 16;
@@ -391,7 +399,7 @@
       if (f.sub && on) rows += `<tr class="dim"><td colspan="4" style="padding:0 0 3px 14px;font-size:11px">${f.sub(i)}</td></tr>`;
     }
     const rank = rankOf(i);
-    return `<h3>${C.name[i]}, ${C.state[i]}</h3>
+    return `<button class="hx" aria-label="Close">×</button><h3>${C.name[i]}, ${C.state[i]}</h3>
       <div class="sub">pop ${(C.pop[i] || 0).toLocaleString()} · rank ${rank ? rank.toLocaleString() : "–"} of ${liveCount.toLocaleString()}${excluded[i] ? ' · <span class="x">excluded</span>' : ""}</div>
       <div class="big">${isFinite(t) ? t.toFixed(1) : "–"}<small> / 100</small></div>
       ${P.mode === "sum" ? `<div class="stack">${stack}</div>` : '<div class="sub">geometric mode: score = 100 × Π sᵢ^(wᵢ/Σw)</div>'}
@@ -410,7 +418,7 @@
     for (const i of order.slice(0, 15)) {
       const li = document.createElement("li");
       li.innerHTML = `${C.name[i]}, ${C.state[i]}<span>${total[i].toFixed(1)}</span>`;
-      li.onclick = () => { map.flyTo({ center: [C.lon[i], C.lat[i]], zoom: 7.5 }); pinned = true; setTimeout(() => showHover(i, map.project([C.lon[i], C.lat[i]])), 1200); };
+      li.onclick = () => { if (isPhone()) panel.classList.add("collapsed"); map.flyTo({ center: [C.lon[i], C.lat[i]], zoom: 7.5 }); pinned = true; setTimeout(() => showHover(i, map.project([C.lon[i], C.lat[i]])), 1200); };
       ol.appendChild(li);
     }
     document.getElementById("top-sub").textContent = `${liveCount.toLocaleString()} counties scored`;
@@ -538,7 +546,9 @@
   bind("p-minpop", "minPop", "change", Number, schedule);
   const st = document.getElementById("p-stretch"); st.checked = P.stretch; st.onchange = () => { P.stretch = st.checked; render(); };
   document.querySelectorAll('input[name=mode]').forEach(r => { r.checked = r.value === P.mode; r.onchange = () => { P.mode = r.value; schedule(); }; });
-  document.getElementById("collapse").onclick = () => document.getElementById("panel").classList.toggle("collapsed");
+  // desktop: the ‹ button folds the panel aside; phone: tapping anywhere on the sheet header opens/closes it
+  panel.querySelector("header").onclick = e => { if (isPhone() || e.target.id === "collapse") panel.classList.toggle("collapsed"); };
+  hover.addEventListener("click", e => { if (e.target.classList.contains("hx")) { pinned = false; hideHover(); } });
 
   let pending = false;
   function schedule() { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; recompute(); }); }
